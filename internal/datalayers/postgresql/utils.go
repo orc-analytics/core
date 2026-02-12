@@ -364,6 +364,12 @@ func processTasks(
 							Algorithm: algorithm_result.GetAlgorithm(),
 							Result:    dep_results,
 						}
+					} else {
+						// just store the result for this window
+						algorithm_dependencies[jj] = &pb.AlgorithmDependencyResult{
+							Algorithm: algorithm_result.GetAlgorithm(),
+							Result:    dep_results,
+						}
 					}
 					jj++
 				}
