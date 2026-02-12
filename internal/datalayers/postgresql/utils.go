@@ -141,9 +141,6 @@ func processTasks(
 				return fmt.Errorf("cannot execute stage, processor not serving: %w", err)
 			}
 
-			// build list of affected Algorithms
-			var affectedAlgorithms []*pb.Algorithm
-
 			// generate an execution id
 			execUuid := uuid.New()
 			execId := strings.ReplaceAll(execUuid.String(), "-", "")
@@ -157,11 +154,6 @@ func processTasks(
 					slog.Error("algorithm not found", "algo_id", node.AlgoId())
 					return fmt.Errorf("algorithm ID %d not found", node.AlgoId())
 				}
-
-				affectedAlgorithms = append(affectedAlgorithms, &pb.Algorithm{
-					Name:    algo.Name,
-					Version: algo.Version,
-				})
 
 				algorithm_dependencies := make([]*pb.AlgorithmDependencyResult, node.LenAlgoDeps())
 
