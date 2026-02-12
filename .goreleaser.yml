@@ -62,5 +62,6 @@ release:
   
 changelog:
   sort: asc
+  filters:
     exclude:
       - '^test:'
