@@ -11,7 +11,7 @@ We welcome contributions from everyone — developers, data scientists, and enth
 Click the **Fork** button on GitHub and clone your fork:
 
 ```bash
-git clone https://github.com/yourusername/orca.git
+git clone https://github.com/yourusername/core.git
 cd orca
 ```
 
