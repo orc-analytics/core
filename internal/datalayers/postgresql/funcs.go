@@ -190,14 +190,16 @@ func (d *Datalayer) addAlgorithm(
 	}
 
 	params := CreateAlgorithmParams{
-		Name:              algo.GetName(),
-		Version:           algo.GetVersion(),
-		Description:       algo.GetDescription(),
-		ProcessorName:     proc.GetName(),
-		ProcessorRuntime:  proc.GetRuntime(),
-		WindowTypeName:    algo.GetWindowType().GetName(),
-		WindowTypeVersion: algo.GetWindowType().GetVersion(),
-		ResultType:        resultType,
+		Name:                  algo.GetName(),
+		Version:               algo.GetVersion(),
+		Description:           algo.GetDescription(),
+		ProcessorName:         proc.GetName(),
+		ProcessorRuntime:      proc.GetRuntime(),
+		WindowTypeName:        algo.GetWindowType().GetName(),
+		WindowTypeVersion:     algo.GetWindowType().GetVersion(),
+		ResultType:            resultType,
+		SelfLookbackCount:     int64(algo.GetLookbackNum()),
+		SelfLookbackTimedelta: int64(algo.GetLookbackTimeDelta()),
 	}
 
 	err := qtx.CreateAlgorithm(ctx, params)

@@ -7,34 +7,37 @@ import (
 
 func TestBuildPlan(t *testing.T) {
 	tests := []struct {
-		name               string
-		algoExecPath       []string
-		windowExecPath     []string
-		procExecPath       []string
-		lookbackCounts     []string
-		lookbackTimedeltas []string
-		targetWindowId     int64
-		want               Plan
-		wantErr            bool
+		name                   string
+		algoExecPath           []string
+		windowExecPath         []string
+		procExecPath           []string
+		lookbackCounts         []string
+		lookbackTimedeltas     []string
+		selfLookbackCounts     []string
+		selfLookbackTimedeltas []string
+		targetWindowId         int64
+		want                   Plan
+		wantErr                bool
 	}{
-		{
-			name:               "simple straight line",
-			algoExecPath:       []string{"1.2.3"},
-			windowExecPath:     []string{"1.1.1"},
-			procExecPath:       []string{"1.1.1"},
-			lookbackCounts:     []string{"0.0.0"},
-			lookbackTimedeltas: []string{"0.0.0"},
-			targetWindowId:     1,
+		{name: "simple straight line",
+			algoExecPath:           []string{"1.2.3"},
+			windowExecPath:         []string{"1.1.1"},
+			procExecPath:           []string{"1.1.1"},
+			lookbackCounts:         []string{"0.0.0"},
+			lookbackTimedeltas:     []string{"0.0.0"},
+			selfLookbackCounts:     []string{"0.0.0"},
+			selfLookbackTimedeltas: []string{"0.0.0"},
+			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
-						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil}}},
+						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
 					}},
 					{Tasks: []ProcessorTask{
-						{ProcId: 1, Nodes: []Node{{algoId: 2, procId: 1, algoDeps: []AlgoDep{{AlgoId: 1}}}}},
+						{ProcId: 1, Nodes: []Node{{algoId: 2, procId: 1, algoDeps: []AlgoDep{{AlgoId: 1}}, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
 					}},
 					{Tasks: []ProcessorTask{
-						{ProcId: 1, Nodes: []Node{{algoId: 3, procId: 1, algoDeps: []AlgoDep{{AlgoId: 2}}}}},
+						{ProcId: 1, Nodes: []Node{{algoId: 3, procId: 1, algoDeps: []AlgoDep{{AlgoId: 2}}, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
 					}},
 				},
 				AffectedProcessors: []int64{1},
@@ -42,18 +45,20 @@ func TestBuildPlan(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:               "parallel roots",
-			algoExecPath:       []string{"1", "2"},
-			windowExecPath:     []string{"1", "1"},
-			procExecPath:       []string{"1", "2"},
-			lookbackCounts:     []string{"0", "0"},
-			lookbackTimedeltas: []string{"0", "0"},
-			targetWindowId:     1,
+			name:                   "parallel roots",
+			algoExecPath:           []string{"1", "2"},
+			windowExecPath:         []string{"1", "1"},
+			procExecPath:           []string{"1", "2"},
+			lookbackCounts:         []string{"0", "0"},
+			lookbackTimedeltas:     []string{"0", "0"},
+			selfLookbackCounts:     []string{"0", "0"},
+			selfLookbackTimedeltas: []string{"0", "0"},
+			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
-						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil}}},
-						{ProcId: 2, Nodes: []Node{{algoId: 2, procId: 2, algoDeps: nil}}},
+						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
+						{ProcId: 2, Nodes: []Node{{algoId: 2, procId: 2, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
 					}},
 				},
 				AffectedProcessors: []int64{1, 2},
@@ -61,27 +66,29 @@ func TestBuildPlan(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:               "fork and join",
-			algoExecPath:       []string{"1.2.4", "1.3.4"},
-			windowExecPath:     []string{"1.1.1", "1.1.1"},
-			procExecPath:       []string{"1.2.3", "1.2.3"},
-			lookbackCounts:     []string{"0.0.0", "0.0.0"},
-			lookbackTimedeltas: []string{"0.0.0", "0.0.0"},
-			targetWindowId:     1,
+			name:                   "fork and join",
+			algoExecPath:           []string{"1.2.4", "1.3.4"},
+			windowExecPath:         []string{"1.1.1", "1.1.1"},
+			procExecPath:           []string{"1.2.3", "1.2.3"},
+			lookbackCounts:         []string{"0.0.0", "0.0.0"},
+			lookbackTimedeltas:     []string{"0.0.0", "0.0.0"},
+			selfLookbackCounts:     []string{"0.0.0", "0.0.0"},
+			selfLookbackTimedeltas: []string{"0.0.0", "0.0.0"},
+			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
-						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil}}},
+						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 2, Nodes: []Node{
-							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1}}},
-							{algoId: 3, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1}}},
+							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
+							{algoId: 3, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 3, Nodes: []Node{
-							{algoId: 4, procId: 3, algoDeps: []AlgoDep{{AlgoId: 2}, {AlgoId: 3}}},
+							{algoId: 4, procId: 3, algoDeps: []AlgoDep{{AlgoId: 2}, {AlgoId: 3}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 					}},
 				},
@@ -90,26 +97,30 @@ func TestBuildPlan(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:               "cycle detection",
-			algoExecPath:       []string{"1.2", "2.1"},
-			windowExecPath:     []string{"1.1", "1.1"},
-			procExecPath:       []string{"1.1", "1.1"},
-			lookbackCounts:     []string{"0.0", "0.0"},
-			lookbackTimedeltas: []string{"0.0", "0.0"},
-			targetWindowId:     1,
-			want:               Plan{},
-			wantErr:            true,
+			name:                   "cycle detection",
+			algoExecPath:           []string{"1.2", "2.1"},
+			windowExecPath:         []string{"1.1", "1.1"},
+			procExecPath:           []string{"1.1", "1.1"},
+			lookbackCounts:         []string{"0.0", "0.0"},
+			lookbackTimedeltas:     []string{"0.0", "0.0"},
+			selfLookbackCounts:     []string{"0.0", "0.0"},
+			selfLookbackTimedeltas: []string{"0.0", "0.0"},
+			targetWindowId:         1,
+			want:                   Plan{},
+			wantErr:                true,
 		},
 		{
-			name:               "empty inputs",
-			algoExecPath:       []string{},
-			windowExecPath:     []string{},
-			procExecPath:       []string{},
-			lookbackCounts:     []string{},
-			lookbackTimedeltas: []string{},
-			targetWindowId:     1,
-			want:               Plan{Stages: nil},
-			wantErr:            false,
+			name:                   "empty inputs",
+			algoExecPath:           []string{},
+			windowExecPath:         []string{},
+			procExecPath:           []string{},
+			lookbackCounts:         []string{},
+			lookbackTimedeltas:     []string{},
+			selfLookbackCounts:     []string{},
+			selfLookbackTimedeltas: []string{},
+			targetWindowId:         1,
+			want:                   Plan{Stages: nil},
+			wantErr:                false,
 		},
 		{
 			name: "complex DAG",
@@ -128,27 +139,29 @@ func TestBuildPlan(t *testing.T) {
 				"1.2.3",   // Node 3 (proc 1) -> Node 4 (proc 2) -> Node 5 (proc 3)
 				"4.5.5.6", // Node 6 (proc 4) -> Node 7 (proc 5) -> Node 8 (proc 5) -> Node 9 (proc 6)
 			},
-			lookbackCounts:     []string{"0.0.0", "0.0.0", "0.0.0.0"},
-			lookbackTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
-			targetWindowId:     1,
+			lookbackCounts:         []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			lookbackTimedeltas:     []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			selfLookbackCounts:     []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			selfLookbackTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{
-							{algoId: 1, procId: 1, algoDeps: nil},
-							{algoId: 3, procId: 1, algoDeps: nil},
+							{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}},
+							{algoId: 3, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 						{ProcId: 4, Nodes: []Node{
-							{algoId: 6, procId: 4, algoDeps: nil},
+							{algoId: 6, procId: 4, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 2, Nodes: []Node{
-							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1, Lookback: Lookback{Count: 0, Timedelta: 0}}}},
-							{algoId: 4, procId: 2, algoDeps: []AlgoDep{{AlgoId: 3, Lookback: Lookback{Count: 0, Timedelta: 0}}}},
+							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1, Lookback: Lookback{Count: 0, Timedelta: 0}}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
+							{algoId: 4, procId: 2, algoDeps: []AlgoDep{{AlgoId: 3, Lookback: Lookback{Count: 0, Timedelta: 0}}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 						{ProcId: 5, Nodes: []Node{
-							{algoId: 7, procId: 5, algoDeps: []AlgoDep{{AlgoId: 6, Lookback: Lookback{Count: 0, Timedelta: 0}}}},
+							{algoId: 7, procId: 5, algoDeps: []AlgoDep{{AlgoId: 6, Lookback: Lookback{Count: 0, Timedelta: 0}}}, selfLookback: Lookback{Count: 0, Timedelta: 0}},
 						}},
 					}},
 					{Tasks: []ProcessorTask{
@@ -196,7 +209,9 @@ func TestBuildPlan(t *testing.T) {
 				"0.13.0",
 				"0.0.0.40",
 			},
-			targetWindowId: 1,
+			selfLookbackCounts:     []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			selfLookbackTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
@@ -245,6 +260,8 @@ func TestBuildPlan(t *testing.T) {
 				tt.procExecPath,
 				tt.lookbackCounts,
 				tt.lookbackTimedeltas,
+				tt.selfLookbackCounts,
+				tt.selfLookbackTimedeltas,
 				tt.targetWindowId,
 			)
 

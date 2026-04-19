@@ -77,8 +77,8 @@ INSERT INTO algorithm (
   processor_id,
   window_type_id,
   result_type,
-  lookback_count, 
-  lookback_timedelta
+  self_lookback_count, 
+  self_lookback_timedelta
 ) VALUES (
   sqlc.arg('name'),
   sqlc.arg('version'),
@@ -86,8 +86,8 @@ INSERT INTO algorithm (
   (SELECT id FROM processor_id),
   (SELECT id FROM window_type_id),
   sqlc.arg('result_type'),
-  sqlc.arg('lookback_count'),
-  sqlc.arg('lookback_timedelta')
+  sqlc.arg('self_lookback_count'),
+  sqlc.arg('self_lookback_timedelta')
 ) ON CONFLICT DO NOTHING ;
 
 -- name: ReadAlgorithmsForWindow :many
