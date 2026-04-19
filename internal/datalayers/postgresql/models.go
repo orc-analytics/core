@@ -56,14 +56,16 @@ func (ns NullResultType) Value() (driver.Value, error) {
 }
 
 type Algorithm struct {
-	ID           int64
-	Name         string
-	Version      string
-	ProcessorID  int64
-	WindowTypeID int64
-	ResultType   ResultType
-	Created      pgtype.Timestamp
-	Description  string
+	ID                int64
+	Name              string
+	Version           string
+	ProcessorID       int64
+	WindowTypeID      int64
+	ResultType        ResultType
+	Created           pgtype.Timestamp
+	Description       string
+	LookbackCount     int64
+	LookbackTimedelta int64
 }
 
 type AlgorithmDependency struct {

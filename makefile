@@ -1,10 +1,8 @@
-.PHONY: all build_proto build_store remove_store refresh_store
+.PHONY: all build_store remove_store refresh_store
 
 all: .proto .datalayer
-proto: .proto
 datalayer: .datalayer
 
-build_proto: .proto 
 build_store: .create_ssl_cert .spin_up_datalayer
 start_store: .start_datalayer
 stop_store: .stop_datalayer
@@ -21,33 +19,6 @@ BINARY_NAME = orca
 
 # disabled CGO to produce statically-linked binaries
 export CGO_ENABLED = 0
-
-.proto:
-	cd protobufs && protoc \
-		--go_out=go \
-		--go_opt=paths=source_relative \
-		--go-grpc_out=go \
-		--go-grpc_opt=paths=source_relative \
-		*.proto vendor/*.proto
-	cd protobufs && python -m grpc_tools.protoc \
-    --proto_path=./ \
-    --python_out=./python \
-    --pyi_out=./python \
-    --grpc_python_out=./python \
-		*.proto vendor/*.proto
-	cd protobufs && protoc \
-		--plugin=protoc-gen-ts=`which protoc-gen-ts_proto` \
-		--ts_proto_out=./nodejs \
-		--ts_proto_opt=esModuleInterop=true \
-		--ts_proto_opt=useExactTypes=true \
-		--ts_proto_opt=outputServices=grpc-js \
-		--ts_proto_opt=forceLong=string \
-		--ts_proto_opt=env=node \
-		--ts_proto_opt=useOptionals=all \
-		--ts_proto_opt=oneof=unions-value \
-		--ts_proto_opt=snakeToCamel=keys_json \
-		--ts_proto_opt=outputClientImpl=true \
-		*.proto vendor/*.proto
 
 .datalayer:
 	sqlc vet -f internal/datalayers/postgresql/sqlc.yaml
