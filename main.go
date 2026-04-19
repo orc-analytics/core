@@ -10,9 +10,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	pb "github.com/orca-telemetry/contract/go"
 	orca "github.com/orca-telemetry/core/internal"
 	dlyr "github.com/orca-telemetry/core/internal/datalayers"
-	pb "github.com/orca-telemetry/core/protobufs/go"
 )
 
 func startGRPCServer(

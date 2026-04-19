@@ -5,9 +5,9 @@ import (
 	"log/slog"
 
 	"github.com/bufbuild/protovalidate-go"
+	pb "github.com/orca-telemetry/contract/go"
 	dlyr "github.com/orca-telemetry/core/internal/datalayers"
 	types "github.com/orca-telemetry/core/internal/types"
-	pb "github.com/orca-telemetry/core/protobufs/go"
 	"google.golang.org/protobuf/proto"
 )
 
