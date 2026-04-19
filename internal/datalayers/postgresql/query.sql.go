@@ -14,13 +14,13 @@ import (
 const createAlgorithm = `-- name: CreateAlgorithm :exec
 WITH processor_id AS (
   SELECT id FROM processor p
-  WHERE p.name = $5 
-  AND p.runtime = $6
+  WHERE p.name = $7 
+  AND p.runtime = $8
 ),
 window_type_id AS (
   SELECT id FROM window_type w
-  WHERE w.name = $7 
-  AND w.version = $8
+  WHERE w.name = $9 
+  AND w.version = $10
 )
 INSERT INTO algorithm (
   name,
@@ -28,14 +28,18 @@ INSERT INTO algorithm (
   description,
   processor_id,
   window_type_id,
-  result_type
+  result_type,
+  lookback_count, 
+  lookback_timedelta
 ) VALUES (
   $1,
   $2,
   $3,
   (SELECT id FROM processor_id),
   (SELECT id FROM window_type_id),
-  $4
+  $4,
+  $5,
+  $6
 ) ON CONFLICT DO NOTHING
 `
 
@@ -44,6 +48,8 @@ type CreateAlgorithmParams struct {
 	Version           string
 	Description       string
 	ResultType        ResultType
+	LookbackCount     int64
+	LookbackTimedelta int64
 	ProcessorName     string
 	ProcessorRuntime  string
 	WindowTypeName    string
@@ -56,6 +62,8 @@ func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams
 		arg.Version,
 		arg.Description,
 		arg.ResultType,
+		arg.LookbackCount,
+		arg.LookbackTimedelta,
 		arg.ProcessorName,
 		arg.ProcessorRuntime,
 		arg.WindowTypeName,
@@ -392,7 +400,7 @@ func (q *Queries) ReadAlgorithmId(ctx context.Context, arg ReadAlgorithmIdParams
 }
 
 const readAlgorithms = `-- name: ReadAlgorithms :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
 `
 
 func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
@@ -413,6 +421,8 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
+			&i.LookbackCount,
+			&i.LookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -425,7 +435,7 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 }
 
 const readAlgorithmsForProcessorId = `-- name: ReadAlgorithmsForProcessorId :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
 WHERE a.processor_id = $1
 `
 
@@ -447,6 +457,8 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
+			&i.LookbackCount,
+			&i.LookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -459,7 +471,7 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 }
 
 const readAlgorithmsForWindow = `-- name: ReadAlgorithmsForWindow :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
 JOIN window_type wt ON a.window_type_id = wt.id
 WHERE wt.name = $1 
 AND wt.version = $2
@@ -488,6 +500,8 @@ func (q *Queries) ReadAlgorithmsForWindow(ctx context.Context, arg ReadAlgorithm
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
+			&i.LookbackCount,
+			&i.LookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}
