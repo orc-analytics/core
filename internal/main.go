@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/bufbuild/protovalidate-go"
+	"buf.build/go/protovalidate"
 	pb "github.com/orca-telemetry/contract/go"
 	dlyr "github.com/orca-telemetry/core/internal/datalayers"
 	types "github.com/orca-telemetry/core/internal/types"
