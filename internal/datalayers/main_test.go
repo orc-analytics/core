@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/orca-telemetry/contract/go"
 	types "github.com/orca-telemetry/core/internal/types"
-	pb "github.com/orca-telemetry/core/protobufs/go"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 

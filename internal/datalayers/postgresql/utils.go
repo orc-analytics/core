@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orca-telemetry/core/internal/dag"
 
+	pb "github.com/orca-telemetry/contract/go"
 	"github.com/orca-telemetry/core/internal/envs"
-	pb "github.com/orca-telemetry/core/protobufs/go"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
