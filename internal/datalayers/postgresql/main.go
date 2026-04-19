@@ -219,17 +219,23 @@ func (d *Datalayer) EmitWindow(
 	}
 
 	// create the algo path args
-	var algoIDPaths []string
-	var windowTypeIDPaths []string
-	var procIDPaths []string
-	var lookbackCounts []string
-	var lookbackTimedeltas []string
+	var (
+		algoIDPaths            []string
+		windowTypeIDPaths      []string
+		procIDPaths            []string
+		lookbackCounts         []string
+		lookbackTimedeltas     []string
+		selfLookackCounts      []string
+		selfLookbackTimedeltas []string
+	)
 	for _, path := range execPaths {
 		algoIDPaths = append(algoIDPaths, path.AlgoIDPath)
 		windowTypeIDPaths = append(windowTypeIDPaths, path.WindowTypeIDPath)
 		procIDPaths = append(procIDPaths, path.ProcIDPath)
 		lookbackCounts = append(lookbackCounts, path.LookbackCountPath)
 		lookbackTimedeltas = append(lookbackTimedeltas, path.LookbackTimedeltaPath)
+		selfLookackCounts = append(selfLookackCounts, path.SelfLookbackCountPath)
+		selfLookbackTimedeltas = append(selfLookbackTimedeltas, path.SelfLookbackTimedeltaPath)
 	}
 
 	// fire off processings
@@ -239,6 +245,8 @@ func (d *Datalayer) EmitWindow(
 		procIDPaths,
 		lookbackCounts,
 		lookbackTimedeltas,
+		selfLookackCounts,
+		selfLookbackTimedeltas,
 		int64(insertedWindow.WindowTypeID),
 	)
 	if err != nil {

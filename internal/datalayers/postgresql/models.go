@@ -56,16 +56,16 @@ func (ns NullResultType) Value() (driver.Value, error) {
 }
 
 type Algorithm struct {
-	ID                int64
-	Name              string
-	Version           string
-	ProcessorID       int64
-	WindowTypeID      int64
-	ResultType        ResultType
-	Created           pgtype.Timestamp
-	Description       string
-	LookbackCount     int64
-	LookbackTimedelta int64
+	ID                    int64
+	Name                  string
+	Version               string
+	ProcessorID           int64
+	WindowTypeID          int64
+	ResultType            ResultType
+	Created               pgtype.Timestamp
+	Description           string
+	SelfLookbackCount     int64
+	SelfLookbackTimedelta int64
 }
 
 type AlgorithmDependency struct {
@@ -82,13 +82,15 @@ type AlgorithmDependency struct {
 }
 
 type AlgorithmExecutionPath struct {
-	FinalAlgoID           int64
-	NumDependencies       int32
-	AlgoIDPath            string
-	WindowTypeIDPath      string
-	ProcIDPath            string
-	LookbackCountPath     string
-	LookbackTimedeltaPath string
+	FinalAlgoID               int64
+	NumDependencies           int32
+	AlgoIDPath                string
+	WindowTypeIDPath          string
+	ProcIDPath                string
+	LookbackCountPath         string
+	LookbackTimedeltaPath     string
+	SelfLookbackCountPath     string
+	SelfLookbackTimedeltaPath string
 }
 
 // Plot annotations with time ranges and metadata

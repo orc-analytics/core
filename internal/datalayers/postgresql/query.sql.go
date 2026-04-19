@@ -29,8 +29,8 @@ INSERT INTO algorithm (
   processor_id,
   window_type_id,
   result_type,
-  lookback_count, 
-  lookback_timedelta
+  self_lookback_count, 
+  self_lookback_timedelta
 ) VALUES (
   $1,
   $2,
@@ -44,16 +44,16 @@ INSERT INTO algorithm (
 `
 
 type CreateAlgorithmParams struct {
-	Name              string
-	Version           string
-	Description       string
-	ResultType        ResultType
-	LookbackCount     int64
-	LookbackTimedelta int64
-	ProcessorName     string
-	ProcessorRuntime  string
-	WindowTypeName    string
-	WindowTypeVersion string
+	Name                  string
+	Version               string
+	Description           string
+	ResultType            ResultType
+	SelfLookbackCount     int64
+	SelfLookbackTimedelta int64
+	ProcessorName         string
+	ProcessorRuntime      string
+	WindowTypeName        string
+	WindowTypeVersion     string
 }
 
 func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams) error {
@@ -62,8 +62,8 @@ func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams
 		arg.Version,
 		arg.Description,
 		arg.ResultType,
-		arg.LookbackCount,
-		arg.LookbackTimedelta,
+		arg.SelfLookbackCount,
+		arg.SelfLookbackTimedelta,
 		arg.ProcessorName,
 		arg.ProcessorRuntime,
 		arg.WindowTypeName,
@@ -305,7 +305,7 @@ func (q *Queries) CreateWindowTypeMetadataFieldBridge(ctx context.Context, arg C
 }
 
 const readAlgorithmExecutionPaths = `-- name: ReadAlgorithmExecutionPaths :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || $1::TEXT || '.*')::lquery
+SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || $1::TEXT || '.*')::lquery
 `
 
 func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID string) ([]AlgorithmExecutionPath, error) {
@@ -325,6 +325,8 @@ func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID 
 			&i.ProcIDPath,
 			&i.LookbackCountPath,
 			&i.LookbackTimedeltaPath,
+			&i.SelfLookbackCountPath,
+			&i.SelfLookbackTimedeltaPath,
 		); err != nil {
 			return nil, err
 		}
@@ -337,7 +339,7 @@ func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID 
 }
 
 const readAlgorithmExecutionPathsForAlgo = `-- name: ReadAlgorithmExecutionPathsForAlgo :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.final_algo_id=$1
+SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.final_algo_id=$1
 `
 
 func (q *Queries) ReadAlgorithmExecutionPathsForAlgo(ctx context.Context, algoID int64) ([]AlgorithmExecutionPath, error) {
@@ -357,6 +359,8 @@ func (q *Queries) ReadAlgorithmExecutionPathsForAlgo(ctx context.Context, algoID
 			&i.ProcIDPath,
 			&i.LookbackCountPath,
 			&i.LookbackTimedeltaPath,
+			&i.SelfLookbackCountPath,
+			&i.SelfLookbackTimedeltaPath,
 		); err != nil {
 			return nil, err
 		}
@@ -400,7 +404,7 @@ func (q *Queries) ReadAlgorithmId(ctx context.Context, arg ReadAlgorithmIdParams
 }
 
 const readAlgorithms = `-- name: ReadAlgorithms :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
 `
 
 func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
@@ -421,8 +425,8 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
-			&i.LookbackCount,
-			&i.LookbackTimedelta,
+			&i.SelfLookbackCount,
+			&i.SelfLookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -435,7 +439,7 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 }
 
 const readAlgorithmsForProcessorId = `-- name: ReadAlgorithmsForProcessorId :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
 WHERE a.processor_id = $1
 `
 
@@ -457,8 +461,8 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
-			&i.LookbackCount,
-			&i.LookbackTimedelta,
+			&i.SelfLookbackCount,
+			&i.SelfLookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -471,7 +475,7 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 }
 
 const readAlgorithmsForWindow = `-- name: ReadAlgorithmsForWindow :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.lookback_count, a.lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
 JOIN window_type wt ON a.window_type_id = wt.id
 WHERE wt.name = $1 
 AND wt.version = $2
@@ -500,8 +504,8 @@ func (q *Queries) ReadAlgorithmsForWindow(ctx context.Context, arg ReadAlgorithm
 			&i.ResultType,
 			&i.Created,
 			&i.Description,
-			&i.LookbackCount,
-			&i.LookbackTimedelta,
+			&i.SelfLookbackCount,
+			&i.SelfLookbackTimedelta,
 		); err != nil {
 			return nil, err
 		}

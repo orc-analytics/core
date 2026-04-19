@@ -43,12 +43,13 @@ func (d AlgoDep) LookbackType() (error, lookback) {
 
 // Node represents an algorithm in the DAG
 type Node struct {
-	id       int64
-	algoId   int64
-	procId   int64
-	windowId int64
-	algoDeps []AlgoDep
-	pathIdx  int
+	id           int64
+	algoId       int64
+	procId       int64
+	windowId     int64
+	algoDeps     []AlgoDep
+	selfLookback Lookback
+	pathIdx      int
 }
 
 // ID satisfies the graph.Node interface.
@@ -150,19 +151,24 @@ func BuildPlan(
 	procExecPaths []string,
 	lookbackCounts []string,
 	lookbackTimedeltas []string,
+	selfLookbackCounts []string,
+	selfLookbackTimedeltas []string,
 	targetWindowId int64,
 ) (Plan, error) {
 	if len(algoExecPaths) != len(windowExecPaths) ||
 		len(windowExecPaths) != len(procExecPaths) ||
 		len(procExecPaths) != len(lookbackCounts) ||
-		len(lookbackCounts) != len(lookbackTimedeltas) {
+		len(lookbackCounts) != len(lookbackTimedeltas) ||
+		len(selfLookbackCounts) != len(selfLookbackTimedeltas) {
 		return Plan{}, fmt.Errorf(
-			"number of graph paths do not match: algo=%d, window=%d, proc=%d, lookbackCounts=%d,lookbackTimedeltas=%d",
+			"number of graph paths do not match: algo=%d, window=%d, proc=%d, lookbackCounts=%d, lookbackTimedeltas=%d, selfLookbackCounts=%d, selfLookbackTimedeltas=%d",
 			len(algoExecPaths),
 			len(windowExecPaths),
 			len(procExecPaths),
 			len(lookbackCounts),
 			len(lookbackTimedeltas),
+			len(selfLookbackCounts),
+			len(selfLookbackTimedeltas),
 		)
 	}
 
@@ -177,19 +183,25 @@ func BuildPlan(
 		procSegments := splitPath(procExecPaths[pathIdx])
 		windowSegments := splitPath(windowExecPaths[pathIdx])
 		lookbackCountSegments := splitPath(lookbackCounts[pathIdx])
-		lookbackTimedeltas := splitPath(lookbackTimedeltas[pathIdx])
+		lookbackTimedeltasSegments := splitPath(lookbackTimedeltas[pathIdx])
+		selfLookbackCountsSegments := splitPath(selfLookbackCounts[pathIdx])
+		selfLookbackTimedeltasSegments := splitPath(selfLookbackTimedeltas[pathIdx])
 
 		if len(algoSegments) != len(windowSegments) ||
 			len(windowSegments) != len(procSegments) ||
 			len(procSegments) != len(lookbackCountSegments) ||
-			len(lookbackCountSegments) != len(lookbackTimedeltas) {
+			len(lookbackCountSegments) != len(lookbackTimedeltasSegments) ||
+			len(lookbackTimedeltasSegments) != len(selfLookbackCountsSegments) ||
+			len(selfLookbackCountsSegments) != len(selfLookbackTimedeltasSegments) {
 			return Plan{}, fmt.Errorf(
-				"number of processor segments do not match: algo=%d, window=%d, proc=%d, lookbackCount=%d, lookbackTd=%d",
+				"number of processor segments do not match: algo=%d, window=%d, proc=%d, lookbackCount=%d, lookbackTd=%d, selfLookbackCount=%d, selfLookbackTimedeltas=%d",
 				len(algoSegments),
 				len(windowSegments),
 				len(procSegments),
 				len(lookbackCountSegments),
-				len(lookbackTimedeltas),
+				len(lookbackTimedeltasSegments),
+				len(selfLookbackCountsSegments),
+				len(selfLookbackTimedeltasSegments),
 			)
 		}
 
@@ -201,7 +213,9 @@ func BuildPlan(
 			procId := mustAtoi(procSegments[ii])
 			windowId := mustAtoi(windowSegments[ii])
 			lookbackCount := mustAtoi(lookbackCountSegments[ii])
-			lookbackTd := mustAtoi(lookbackTimedeltas[ii])
+			lookbackTd := mustAtoi(lookbackTimedeltasSegments[ii])
+			selfLookbackCount := mustAtoi(selfLookbackCountsSegments[ii])
+			selfLookbackTd := mustAtoi(selfLookbackTimedeltasSegments[ii])
 
 			if pathWindowMap == nil {
 				pathWindowMap = make(map[int64]int64)
@@ -225,7 +239,11 @@ func BuildPlan(
 					algoId:   int64(algoId),
 					procId:   int64(procId),
 					windowId: int64(windowId),
-					pathIdx:  pathIdx,
+					selfLookback: Lookback{
+						Count:     selfLookbackCount,
+						Timedelta: selfLookbackTd,
+					},
+					pathIdx: pathIdx,
 				}
 				nodeMap[int64(algoId)] = node
 				g.AddNode(node)
