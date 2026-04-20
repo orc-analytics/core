@@ -163,6 +163,7 @@ func BuildPlan(
 		len(windowExecPaths) != len(procExecPaths) ||
 		len(procExecPaths) != len(lookbackCounts) ||
 		len(lookbackCounts) != len(lookbackTimedeltas) ||
+		len(lookbackTimedeltas) != len(selfLookbackCounts) ||
 		len(selfLookbackCounts) != len(selfLookbackTimedeltas) {
 		return Plan{}, fmt.Errorf(
 			"number of graph paths do not match: algo=%d, window=%d, proc=%d, lookbackCounts=%d, lookbackTimedeltas=%d, selfLookbackCounts=%d, selfLookbackTimedeltas=%d",
