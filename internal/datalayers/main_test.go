@@ -210,6 +210,8 @@ func TestLookbackDependenciesBetweenAlgorithms(t *testing.T) {
 		Version:    "1.0.0",
 		WindowType: &windowType,
 		ResultType: pb.ResultType_VALUE,
+		// has self lookback also so we can test this feature
+		Lookback: &pb.Algorithm_LookbackNum{LookbackNum: 3},
 	}
 
 	proc_1 := pb.ProcessorRegistration{
