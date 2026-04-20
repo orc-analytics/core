@@ -56,41 +56,49 @@ func (ns NullResultType) Value() (driver.Value, error) {
 }
 
 type Algorithm struct {
-	ID                    int64
-	Name                  string
-	Version               string
-	ProcessorID           int64
-	WindowTypeID          int64
-	ResultType            ResultType
-	Created               pgtype.Timestamp
-	Description           string
-	SelfLookbackCount     int64
-	SelfLookbackTimedelta int64
+	ID                       int64
+	Name                     string
+	Version                  string
+	ProcessorID              int64
+	WindowTypeID             int64
+	ResultType               ResultType
+	Created                  pgtype.Timestamp
+	Description              string
+	SelfLookbackCount        int64
+	SelfLookbackTimedelta    int64
+	SelfLookbackGapCount     int64
+	SelfLookbackGapTimedelta int64
 }
 
 type AlgorithmDependency struct {
-	ID                int64
-	FromAlgorithmID   int64
-	ToAlgorithmID     int64
-	FromWindowTypeID  int64
-	ToWindowTypeID    int64
-	FromProcessorID   int64
-	ToProcessorID     int64
-	Created           pgtype.Timestamp
-	LookbackCount     int64
-	LookbackTimedelta int64
+	ID                   int64
+	FromAlgorithmID      int64
+	ToAlgorithmID        int64
+	FromWindowTypeID     int64
+	ToWindowTypeID       int64
+	FromProcessorID      int64
+	ToProcessorID        int64
+	Created              pgtype.Timestamp
+	LookbackCount        int64
+	LookbackTimedelta    int64
+	LookbackGapCount     int64
+	LookbackGapTimedelta int64
 }
 
 type AlgorithmExecutionPath struct {
-	FinalAlgoID               int64
-	NumDependencies           int32
-	AlgoIDPath                string
-	WindowTypeIDPath          string
-	ProcIDPath                string
-	LookbackCountPath         string
-	LookbackTimedeltaPath     string
-	SelfLookbackCountPath     string
-	SelfLookbackTimedeltaPath string
+	FinalAlgoID                  int64
+	NumDependencies              int32
+	AlgoIDPath                   string
+	WindowTypeIDPath             string
+	ProcIDPath                   string
+	LookbackCountPath            string
+	LookbackTimedeltaPath        string
+	SelfLookbackCountPath        string
+	SelfLookbackTimedeltaPath    string
+	LookbackGapCountPath         string
+	LookbackGapTimedeltaPath     string
+	SelfLookbackGapCountPath     string
+	SelfLookbackGapTimedeltaPath string
 }
 
 // Plot annotations with time ranges and metadata

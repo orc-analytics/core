@@ -220,22 +220,34 @@ func (d *Datalayer) EmitWindow(
 
 	// create the algo path args
 	var (
-		algoIDPaths            []string
-		windowTypeIDPaths      []string
-		procIDPaths            []string
+		algoIDPaths       []string
+		windowTypeIDPaths []string
+		procIDPaths       []string
+		// lookbacks
 		lookbackCounts         []string
 		lookbackTimedeltas     []string
-		selfLookackCounts      []string
+		selfLookbackCounts     []string
 		selfLookbackTimedeltas []string
+		// lookback gaps
+		lookbackGapCounts         []string
+		lookbackGapTimedeltas     []string
+		selfLookbackGapCounts     []string
+		selfLookbackGapTimedeltas []string
 	)
 	for _, path := range execPaths {
 		algoIDPaths = append(algoIDPaths, path.AlgoIDPath)
 		windowTypeIDPaths = append(windowTypeIDPaths, path.WindowTypeIDPath)
 		procIDPaths = append(procIDPaths, path.ProcIDPath)
+
 		lookbackCounts = append(lookbackCounts, path.LookbackCountPath)
 		lookbackTimedeltas = append(lookbackTimedeltas, path.LookbackTimedeltaPath)
-		selfLookackCounts = append(selfLookackCounts, path.SelfLookbackCountPath)
+		selfLookbackCounts = append(selfLookbackCounts, path.SelfLookbackCountPath)
 		selfLookbackTimedeltas = append(selfLookbackTimedeltas, path.SelfLookbackTimedeltaPath)
+
+		lookbackGapCounts = append(lookbackGapCounts, path.LookbackCountPath)
+		lookbackGapTimedeltas = append(lookbackGapTimedeltas, path.LookbackTimedeltaPath)
+		selfLookbackGapCounts = append(selfLookbackGapCounts, path.SelfLookbackCountPath)
+		selfLookbackGapTimedeltas = append(selfLookbackGapTimedeltas, path.SelfLookbackTimedeltaPath)
 	}
 
 	// fire off processings
@@ -245,8 +257,12 @@ func (d *Datalayer) EmitWindow(
 		procIDPaths,
 		lookbackCounts,
 		lookbackTimedeltas,
-		selfLookackCounts,
+		lookbackGapCounts,
+		lookbackGapTimedeltas,
+		selfLookbackCounts,
 		selfLookbackTimedeltas,
+		selfLookbackGapCounts,
+		selfLookbackGapTimedeltas,
 		int64(insertedWindow.WindowTypeID),
 	)
 	if err != nil {

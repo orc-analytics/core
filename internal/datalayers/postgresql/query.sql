@@ -78,7 +78,9 @@ INSERT INTO algorithm (
   window_type_id,
   result_type,
   self_lookback_count, 
-  self_lookback_timedelta
+  self_lookback_timedelta,
+  self_lookback_gap_count,
+  self_lookback_gap_timedelta
 ) VALUES (
   sqlc.arg('name'),
   sqlc.arg('version'),
@@ -87,7 +89,9 @@ INSERT INTO algorithm (
   (SELECT id FROM window_type_id),
   sqlc.arg('result_type'),
   sqlc.arg('self_lookback_count'),
-  sqlc.arg('self_lookback_timedelta')
+  sqlc.arg('self_lookback_timedelta'),
+  sqlc.arg('self_lookback_gap_count'),
+  sqlc.arg('self_lookback_gap_timedelta')
 ) ON CONFLICT DO NOTHING ;
 
 -- name: ReadAlgorithmsForWindow :many
@@ -128,7 +132,9 @@ INSERT INTO algorithm_dependency (
   from_processor_id,
   to_processor_id,
   lookback_count,
-  lookback_timedelta
+  lookback_timedelta,
+  lookback_gap_count,
+  lookback_gap_timedelta
 ) VALUES (
   (SELECT id FROM from_algo LIMIT 1),
   (SELECT id FROM to_algo LIMIT 1),
@@ -137,7 +143,9 @@ INSERT INTO algorithm_dependency (
   (SELECT processor_id FROM from_algo LIMIT 1),
   (SELECT processor_id FROM to_algo LIMIT 1),
   sqlc.arg('lookback_count'),
-  sqlc.arg('lookback_timedelta')
+  sqlc.arg('lookback_timedelta'),
+  sqlc.arg('lookback_gap_count'),
+  sqlc.arg('lookback_gap_timedelta')
 ) ON CONFLICT (from_algorithm_id, to_algorithm_id) DO UPDATE
   SET
     from_window_type_id = excluded.from_window_type_id,
@@ -245,7 +253,7 @@ SELECT * FROM window_type_metadata_fields;
 
 -- name: ReadResultsForAlgorithmByTimedelta :many
 SELECT
-	r.id as result_id,
+    r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
     a.result_type,
@@ -258,21 +266,21 @@ SELECT
     w.time_to as window_time_to,
     w.origin as window_origin,
     w.metadata as window_metadata
-FROM
-	results r
-JOIN windows w ON
-	w.id = r.windows_id
-JOIN window_type wt on wt.id = w.window_type_id
-JOIN algorithm a on a.id = r.algorithm_id 
+FROM results r
+JOIN windows w ON w.id = r.windows_id
+JOIN window_type wt ON wt.id = w.window_type_id
+JOIN algorithm a ON a.id = r.algorithm_id 
 WHERE
-	r.algorithm_id = sqlc.arg('algorithm_id')
+    r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_from > sqlc.arg('search_from')
-    AND w.time_to  < sqlc.arg('search_to')
-order by time_from, time_to desc;
+    AND w.time_to < sqlc.arg('search_to')
+ORDER BY w.time_from, w.time_to DESC
+LIMIT sqlc.arg('limit') -- Added limit for consistency
+OFFSET sqlc.arg('count_offset');
 
 -- name: ReadResultsForAlgorithmByCount :many
 SELECT
-	r.id as result_id,
+    r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
     a.result_type,
@@ -285,13 +293,13 @@ SELECT
     w.time_to as window_time_to,
     w.origin as window_origin,
     w.metadata as window_metadata
-FROM
-	results r
-JOIN windows w on
-	w.id = r.windows_id
-JOIN window_type wt on wt.id = w.window_type_id
-JOIN algorithm a on a.id = r.algorithm_id
+FROM results r
+JOIN windows w ON w.id = r.windows_id
+JOIN window_type wt ON wt.id = w.window_type_id
+JOIN algorithm a ON a.id = r.algorithm_id
 WHERE
-	r.algorithm_id = sqlc.arg('algorithm_id')
+    r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_to < sqlc.arg('search_to')
-ORDER by time_from,time_to desc LIMIT sqlc.arg('count');
+ORDER BY w.time_from, w.time_to DESC
+LIMIT sqlc.arg('count')
+OFFSET sqlc.arg('count_offset');
