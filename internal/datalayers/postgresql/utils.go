@@ -73,6 +73,7 @@ func processTasks(
 	config := envs.GetConfig()
 
 	// for each stage, build processsings
+	// TODO: Factor in self lookback
 	slog.Debug("execution plan", "executionPlan", executionPlan)
 	for _, stage := range executionPlan.Stages {
 		for _, task := range stage.Tasks {

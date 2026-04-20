@@ -209,23 +209,23 @@ func TestBuildPlan(t *testing.T) {
 				"0.13.0",
 				"0.0.0.40",
 			},
-			selfLookbackCounts:     []string{"0.0.0", "0.0.0", "0.0.0.0"},
-			selfLookbackTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
+			selfLookbackCounts:     []string{"1.10.0", "0.0.0", "0.0.0.3000"},
+			selfLookbackTimedeltas: []string{"0.0.1202220222", "0.0.0", "1122.0.0.0"},
 			targetWindowId:         1,
 			want: Plan{
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{
-							{algoId: 1, procId: 1, algoDeps: nil},
+							{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 1}},
 							{algoId: 3, procId: 1, algoDeps: nil},
 						}},
 						{ProcId: 4, Nodes: []Node{
-							{algoId: 6, procId: 4, algoDeps: nil},
+							{algoId: 6, procId: 4, algoDeps: nil, selfLookback: Lookback{Timedelta: 1122}},
 						}},
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 2, Nodes: []Node{
-							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1, Lookback: Lookback{Count: 10, Timedelta: 0}}}},
+							{algoId: 2, procId: 2, algoDeps: []AlgoDep{{AlgoId: 1, Lookback: Lookback{Count: 10, Timedelta: 0}}}, selfLookback: Lookback{Count: 10}},
 							{algoId: 4, procId: 2, algoDeps: []AlgoDep{{AlgoId: 3, Lookback: Lookback{Count: 0, Timedelta: 13}}}},
 						}},
 						{ProcId: 5, Nodes: []Node{
@@ -234,7 +234,7 @@ func TestBuildPlan(t *testing.T) {
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 3, Nodes: []Node{
-							{algoId: 5, procId: 3, algoDeps: []AlgoDep{{AlgoId: 2, Lookback: Lookback{Count: 0, Timedelta: 100}}, {AlgoId: 4, Lookback: Lookback{Count: 103, Timedelta: 0}}}},
+							{algoId: 5, procId: 3, algoDeps: []AlgoDep{{AlgoId: 2, Lookback: Lookback{Count: 0, Timedelta: 100}}, {AlgoId: 4, Lookback: Lookback{Count: 103, Timedelta: 0}}}, selfLookback: Lookback{Timedelta: 1202220222}},
 						}},
 						{ProcId: 5, Nodes: []Node{
 							{algoId: 8, procId: 5, algoDeps: []AlgoDep{{AlgoId: 7, Lookback: Lookback{Count: 10, Timedelta: 0}}}},
@@ -242,7 +242,7 @@ func TestBuildPlan(t *testing.T) {
 					}},
 					{Tasks: []ProcessorTask{
 						{ProcId: 6, Nodes: []Node{
-							{algoId: 9, procId: 6, algoDeps: []AlgoDep{{AlgoId: 8, Lookback: Lookback{Count: 0, Timedelta: 40}}}},
+							{algoId: 9, procId: 6, algoDeps: []AlgoDep{{AlgoId: 8, Lookback: Lookback{Count: 0, Timedelta: 40}}}, selfLookback: Lookback{Count: 3000}},
 						}},
 					}},
 				},
