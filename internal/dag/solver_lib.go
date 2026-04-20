@@ -73,6 +73,10 @@ func (n Node) LenAlgoDeps() int {
 	return len(n.algoDeps)
 }
 
+func (n Node) SelfLookback() Lookback {
+	return n.selfLookback
+}
+
 // ProcessorTask represents a set of tasks (nodes) assigned to a single processor
 type ProcessorTask struct {
 	ProcId int64

@@ -739,6 +739,7 @@ SELECT
 	r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
+    a.result_type,
     r.result_value, 
     r.result_array,
     r.result_json,
@@ -753,6 +754,7 @@ FROM
 JOIN windows w on
 	w.id = r.windows_id
 JOIN window_type wt on wt.id = w.window_type_id
+JOIN algorithm a on a.id = r.algorithm_id
 WHERE
 	r.algorithm_id = $1
     AND w.time_to < $2
@@ -769,6 +771,7 @@ type ReadResultsForAlgorithmByCountRow struct {
 	ResultID          int64
 	AlgorithmID       pgtype.Int8
 	WindowID          int64
+	ResultType        ResultType
 	ResultValue       pgtype.Float8
 	ResultArray       []float64
 	ResultJson        []byte
@@ -793,6 +796,7 @@ func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadRe
 			&i.ResultID,
 			&i.AlgorithmID,
 			&i.WindowID,
+			&i.ResultType,
 			&i.ResultValue,
 			&i.ResultArray,
 			&i.ResultJson,
@@ -818,6 +822,7 @@ SELECT
 	r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
+    a.result_type,
     r.result_value, 
     r.result_array,
     r.result_json,
@@ -832,6 +837,7 @@ FROM
 JOIN windows w ON
 	w.id = r.windows_id
 JOIN window_type wt on wt.id = w.window_type_id
+JOIN algorithm a on a.id = r.algorithm_id 
 WHERE
 	r.algorithm_id = $1
     AND w.time_from > $2
@@ -849,6 +855,7 @@ type ReadResultsForAlgorithmByTimedeltaRow struct {
 	ResultID          int64
 	AlgorithmID       pgtype.Int8
 	WindowID          int64
+	ResultType        ResultType
 	ResultValue       pgtype.Float8
 	ResultArray       []float64
 	ResultJson        []byte
@@ -873,6 +880,7 @@ func (q *Queries) ReadResultsForAlgorithmByTimedelta(ctx context.Context, arg Re
 			&i.ResultID,
 			&i.AlgorithmID,
 			&i.WindowID,
+			&i.ResultType,
 			&i.ResultValue,
 			&i.ResultArray,
 			&i.ResultJson,
