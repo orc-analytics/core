@@ -14,13 +14,13 @@ import (
 const createAlgorithm = `-- name: CreateAlgorithm :exec
 WITH processor_id AS (
   SELECT id FROM processor p
-  WHERE p.name = $7 
-  AND p.runtime = $8
+  WHERE p.name = $9 
+  AND p.runtime = $10
 ),
 window_type_id AS (
   SELECT id FROM window_type w
-  WHERE w.name = $9 
-  AND w.version = $10
+  WHERE w.name = $11 
+  AND w.version = $12
 )
 INSERT INTO algorithm (
   name,
@@ -30,7 +30,9 @@ INSERT INTO algorithm (
   window_type_id,
   result_type,
   self_lookback_count, 
-  self_lookback_timedelta
+  self_lookback_timedelta,
+  self_lookback_gap_count,
+  self_lookback_gap_timedelta
 ) VALUES (
   $1,
   $2,
@@ -39,21 +41,25 @@ INSERT INTO algorithm (
   (SELECT id FROM window_type_id),
   $4,
   $5,
-  $6
+  $6,
+  $7,
+  $8
 ) ON CONFLICT DO NOTHING
 `
 
 type CreateAlgorithmParams struct {
-	Name                  string
-	Version               string
-	Description           string
-	ResultType            ResultType
-	SelfLookbackCount     int64
-	SelfLookbackTimedelta int64
-	ProcessorName         string
-	ProcessorRuntime      string
-	WindowTypeName        string
-	WindowTypeVersion     string
+	Name                     string
+	Version                  string
+	Description              string
+	ResultType               ResultType
+	SelfLookbackCount        int64
+	SelfLookbackTimedelta    int64
+	SelfLookbackGapCount     int64
+	SelfLookbackGapTimedelta int64
+	ProcessorName            string
+	ProcessorRuntime         string
+	WindowTypeName           string
+	WindowTypeVersion        string
 }
 
 func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams) error {
@@ -64,6 +70,8 @@ func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams
 		arg.ResultType,
 		arg.SelfLookbackCount,
 		arg.SelfLookbackTimedelta,
+		arg.SelfLookbackGapCount,
+		arg.SelfLookbackGapTimedelta,
 		arg.ProcessorName,
 		arg.ProcessorRuntime,
 		arg.WindowTypeName,
@@ -76,18 +84,18 @@ const createAlgorithmDependency = `-- name: CreateAlgorithmDependency :exec
 WITH from_algo AS (
   SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
   JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = $3
-  AND a.version = $4
-  AND p.name = $5
-  AND p.runtime = $6
+  WHERE a.name = $5
+  AND a.version = $6
+  AND p.name = $7
+  AND p.runtime = $8
 ),
 to_algo AS (
   SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
   JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = $7
-  AND a.version = $8
-  AND p.name = $9
-  AND p.runtime = $10
+  WHERE a.name = $9
+  AND a.version = $10
+  AND p.name = $11
+  AND p.runtime = $12
 )
 INSERT INTO algorithm_dependency (
   from_algorithm_id,
@@ -97,7 +105,9 @@ INSERT INTO algorithm_dependency (
   from_processor_id,
   to_processor_id,
   lookback_count,
-  lookback_timedelta
+  lookback_timedelta,
+  lookback_gap_count,
+  lookback_gap_timedelta
 ) VALUES (
   (SELECT id FROM from_algo LIMIT 1),
   (SELECT id FROM to_algo LIMIT 1),
@@ -106,7 +116,9 @@ INSERT INTO algorithm_dependency (
   (SELECT processor_id FROM from_algo LIMIT 1),
   (SELECT processor_id FROM to_algo LIMIT 1),
   $1,
-  $2
+  $2,
+  $3,
+  $4
 ) ON CONFLICT (from_algorithm_id, to_algorithm_id) DO UPDATE
   SET
     from_window_type_id = excluded.from_window_type_id,
@@ -120,6 +132,8 @@ INSERT INTO algorithm_dependency (
 type CreateAlgorithmDependencyParams struct {
 	LookbackCount        int64
 	LookbackTimedelta    int64
+	LookbackGapCount     int64
+	LookbackGapTimedelta int64
 	FromAlgorithmName    string
 	FromAlgorithmVersion string
 	FromProcessorName    string
@@ -134,6 +148,8 @@ func (q *Queries) CreateAlgorithmDependency(ctx context.Context, arg CreateAlgor
 	_, err := q.db.Exec(ctx, createAlgorithmDependency,
 		arg.LookbackCount,
 		arg.LookbackTimedelta,
+		arg.LookbackGapCount,
+		arg.LookbackGapTimedelta,
 		arg.FromAlgorithmName,
 		arg.FromAlgorithmVersion,
 		arg.FromProcessorName,
@@ -305,7 +321,7 @@ func (q *Queries) CreateWindowTypeMetadataFieldBridge(ctx context.Context, arg C
 }
 
 const readAlgorithmExecutionPaths = `-- name: ReadAlgorithmExecutionPaths :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || $1::TEXT || '.*')::lquery
+SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path, aep.lookback_gap_count_path, aep.lookback_gap_timedelta_path, aep.self_lookback_gap_count_path, aep.self_lookback_gap_timedelta_path FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || $1::TEXT || '.*')::lquery
 `
 
 func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID string) ([]AlgorithmExecutionPath, error) {
@@ -327,6 +343,10 @@ func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID 
 			&i.LookbackTimedeltaPath,
 			&i.SelfLookbackCountPath,
 			&i.SelfLookbackTimedeltaPath,
+			&i.LookbackGapCountPath,
+			&i.LookbackGapTimedeltaPath,
+			&i.SelfLookbackGapCountPath,
+			&i.SelfLookbackGapTimedeltaPath,
 		); err != nil {
 			return nil, err
 		}
@@ -339,7 +359,7 @@ func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID 
 }
 
 const readAlgorithmExecutionPathsForAlgo = `-- name: ReadAlgorithmExecutionPathsForAlgo :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path FROM algorithm_execution_paths aep WHERE aep.final_algo_id=$1
+SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path, aep.lookback_gap_count_path, aep.lookback_gap_timedelta_path, aep.self_lookback_gap_count_path, aep.self_lookback_gap_timedelta_path FROM algorithm_execution_paths aep WHERE aep.final_algo_id=$1
 `
 
 func (q *Queries) ReadAlgorithmExecutionPathsForAlgo(ctx context.Context, algoID int64) ([]AlgorithmExecutionPath, error) {
@@ -361,6 +381,10 @@ func (q *Queries) ReadAlgorithmExecutionPathsForAlgo(ctx context.Context, algoID
 			&i.LookbackTimedeltaPath,
 			&i.SelfLookbackCountPath,
 			&i.SelfLookbackTimedeltaPath,
+			&i.LookbackGapCountPath,
+			&i.LookbackGapTimedeltaPath,
+			&i.SelfLookbackGapCountPath,
+			&i.SelfLookbackGapTimedeltaPath,
 		); err != nil {
 			return nil, err
 		}
@@ -404,7 +428,7 @@ func (q *Queries) ReadAlgorithmId(ctx context.Context, arg ReadAlgorithmIdParams
 }
 
 const readAlgorithms = `-- name: ReadAlgorithms :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
 `
 
 func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
@@ -427,6 +451,8 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 			&i.Description,
 			&i.SelfLookbackCount,
 			&i.SelfLookbackTimedelta,
+			&i.SelfLookbackGapCount,
+			&i.SelfLookbackGapTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +465,7 @@ func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
 }
 
 const readAlgorithmsForProcessorId = `-- name: ReadAlgorithmsForProcessorId :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
 WHERE a.processor_id = $1
 `
 
@@ -463,6 +489,8 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 			&i.Description,
 			&i.SelfLookbackCount,
 			&i.SelfLookbackTimedelta,
+			&i.SelfLookbackGapCount,
+			&i.SelfLookbackGapTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -475,7 +503,7 @@ func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID 
 }
 
 const readAlgorithmsForWindow = `-- name: ReadAlgorithmsForWindow :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta FROM algorithm a
+SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
 JOIN window_type wt ON a.window_type_id = wt.id
 WHERE wt.name = $1 
 AND wt.version = $2
@@ -506,6 +534,8 @@ func (q *Queries) ReadAlgorithmsForWindow(ctx context.Context, arg ReadAlgorithm
 			&i.Description,
 			&i.SelfLookbackCount,
 			&i.SelfLookbackTimedelta,
+			&i.SelfLookbackGapCount,
+			&i.SelfLookbackGapTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -526,7 +556,7 @@ WITH from_algo AS (
   AND p.name = $3
   AND p.runtime = $4
 )
-SELECT ad.id, ad.from_algorithm_id, ad.to_algorithm_id, ad.from_window_type_id, ad.to_window_type_id, ad.from_processor_id, ad.to_processor_id, ad.created, ad.lookback_count, ad.lookback_timedelta FROM algorithm_dependency ad WHERE ad.from_algorithm_id = from_algo.id
+SELECT ad.id, ad.from_algorithm_id, ad.to_algorithm_id, ad.from_window_type_id, ad.to_window_type_id, ad.from_processor_id, ad.to_processor_id, ad.created, ad.lookback_count, ad.lookback_timedelta, ad.lookback_gap_count, ad.lookback_gap_timedelta FROM algorithm_dependency ad WHERE ad.from_algorithm_id = from_algo.id
 `
 
 type ReadFromAlgorithmDependenciesParams struct {
@@ -561,6 +591,8 @@ func (q *Queries) ReadFromAlgorithmDependencies(ctx context.Context, arg ReadFro
 			&i.Created,
 			&i.LookbackCount,
 			&i.LookbackTimedelta,
+			&i.LookbackGapCount,
+			&i.LookbackGapTimedelta,
 		); err != nil {
 			return nil, err
 		}
@@ -736,7 +768,7 @@ func (q *Queries) ReadProcessorsByIDs(ctx context.Context, processorIds []int64)
 
 const readResultsForAlgorithmByCount = `-- name: ReadResultsForAlgorithmByCount :many
 SELECT
-	r.id as result_id,
+    r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
     a.result_type,
@@ -749,21 +781,22 @@ SELECT
     w.time_to as window_time_to,
     w.origin as window_origin,
     w.metadata as window_metadata
-FROM
-	results r
-JOIN windows w on
-	w.id = r.windows_id
-JOIN window_type wt on wt.id = w.window_type_id
-JOIN algorithm a on a.id = r.algorithm_id
+FROM results r
+JOIN windows w ON w.id = r.windows_id
+JOIN window_type wt ON wt.id = w.window_type_id
+JOIN algorithm a ON a.id = r.algorithm_id
 WHERE
-	r.algorithm_id = $1
+    r.algorithm_id = $1
     AND w.time_to < $2
-ORDER by time_from,time_to desc LIMIT $3
+ORDER BY w.time_from, w.time_to DESC
+LIMIT $4
+OFFSET $3
 `
 
 type ReadResultsForAlgorithmByCountParams struct {
 	AlgorithmID pgtype.Int8
 	SearchTo    pgtype.Timestamp
+	CountOffset int32
 	Count       int32
 }
 
@@ -784,7 +817,12 @@ type ReadResultsForAlgorithmByCountRow struct {
 }
 
 func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadResultsForAlgorithmByCountParams) ([]ReadResultsForAlgorithmByCountRow, error) {
-	rows, err := q.db.Query(ctx, readResultsForAlgorithmByCount, arg.AlgorithmID, arg.SearchTo, arg.Count)
+	rows, err := q.db.Query(ctx, readResultsForAlgorithmByCount,
+		arg.AlgorithmID,
+		arg.SearchTo,
+		arg.CountOffset,
+		arg.Count,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -819,7 +857,7 @@ func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadRe
 
 const readResultsForAlgorithmByTimedelta = `-- name: ReadResultsForAlgorithmByTimedelta :many
 SELECT
-	r.id as result_id,
+    r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
     a.result_type,
@@ -832,23 +870,25 @@ SELECT
     w.time_to as window_time_to,
     w.origin as window_origin,
     w.metadata as window_metadata
-FROM
-	results r
-JOIN windows w ON
-	w.id = r.windows_id
-JOIN window_type wt on wt.id = w.window_type_id
-JOIN algorithm a on a.id = r.algorithm_id 
+FROM results r
+JOIN windows w ON w.id = r.windows_id
+JOIN window_type wt ON wt.id = w.window_type_id
+JOIN algorithm a ON a.id = r.algorithm_id 
 WHERE
-	r.algorithm_id = $1
+    r.algorithm_id = $1
     AND w.time_from > $2
-    AND w.time_to  < $3
-order by time_from, time_to desc
+    AND w.time_to < $3
+ORDER BY w.time_from, w.time_to DESC
+LIMIT $5 -- Added limit for consistency
+OFFSET $4
 `
 
 type ReadResultsForAlgorithmByTimedeltaParams struct {
 	AlgorithmID pgtype.Int8
 	SearchFrom  pgtype.Timestamp
 	SearchTo    pgtype.Timestamp
+	CountOffset int32
+	Limit       int32
 }
 
 type ReadResultsForAlgorithmByTimedeltaRow struct {
@@ -868,7 +908,13 @@ type ReadResultsForAlgorithmByTimedeltaRow struct {
 }
 
 func (q *Queries) ReadResultsForAlgorithmByTimedelta(ctx context.Context, arg ReadResultsForAlgorithmByTimedeltaParams) ([]ReadResultsForAlgorithmByTimedeltaRow, error) {
-	rows, err := q.db.Query(ctx, readResultsForAlgorithmByTimedelta, arg.AlgorithmID, arg.SearchFrom, arg.SearchTo)
+	rows, err := q.db.Query(ctx, readResultsForAlgorithmByTimedelta,
+		arg.AlgorithmID,
+		arg.SearchFrom,
+		arg.SearchTo,
+		arg.CountOffset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -190,16 +190,18 @@ func (d *Datalayer) addAlgorithm(
 	}
 
 	params := CreateAlgorithmParams{
-		Name:                  algo.GetName(),
-		Version:               algo.GetVersion(),
-		Description:           algo.GetDescription(),
-		ProcessorName:         proc.GetName(),
-		ProcessorRuntime:      proc.GetRuntime(),
-		WindowTypeName:        algo.GetWindowType().GetName(),
-		WindowTypeVersion:     algo.GetWindowType().GetVersion(),
-		ResultType:            resultType,
-		SelfLookbackCount:     int64(algo.GetLookbackNum()),
-		SelfLookbackTimedelta: int64(algo.GetLookbackTimeDelta()),
+		Name:                     algo.GetName(),
+		Version:                  algo.GetVersion(),
+		Description:              algo.GetDescription(),
+		ProcessorName:            proc.GetName(),
+		ProcessorRuntime:         proc.GetRuntime(),
+		WindowTypeName:           algo.GetWindowType().GetName(),
+		WindowTypeVersion:        algo.GetWindowType().GetVersion(),
+		ResultType:               resultType,
+		SelfLookbackCount:        int64(algo.GetLookbackNum()),
+		SelfLookbackTimedelta:    int64(algo.GetLookbackTimeDelta()),
+		SelfLookbackGapCount:     int64(algo.GetLookbackGapNum()),
+		SelfLookbackGapTimedelta: int64(algo.GetLookbackGapTimeDelta()),
 	}
 
 	err := qtx.CreateAlgorithm(ctx, params)
@@ -278,6 +280,8 @@ func (d *Datalayer) addOverwriteAlgorithmDependency(
 					ToProcessorRuntime:   proc.GetRuntime(),
 					LookbackCount:        int64(algoDependentOn.GetLookbackNum()),
 					LookbackTimedelta:    int64(algoDependentOn.GetLookbackTimeDelta()),
+					LookbackGapCount:     int64(algoDependentOn.GetLookbackGapNum()),
+					LookbackGapTimedelta: int64(algoDependentOn.GetLookbackGapTimeDelta()),
 				})
 				if err != nil {
 					return fmt.Errorf("issue constructing algorithm dependency: %v", err)
