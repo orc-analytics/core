@@ -35,6 +35,7 @@ func processTasks(
 ) error {
 	ctx := context.Background()
 	slog.Info("calculated execution paths", "execution_paths", executionPlan)
+
 	// get map of processors from processor ids
 	processorMap := make(
 		map[int64]Processor,
@@ -73,7 +74,6 @@ func processTasks(
 	config := envs.GetConfig()
 
 	// for each stage, build processsings
-	// TODO: Factor in self lookback
 	slog.Debug("execution plan", "executionPlan", executionPlan)
 	for _, stage := range executionPlan.Stages {
 		for _, task := range stage.Tasks {
@@ -374,12 +374,204 @@ func processTasks(
 					}
 					jj++
 				}
+
+				// gather self results
+				selfLookback := node.SelfLookback()
+				searchTo := window.GetTimeFrom().AsTime()
+
+				var selfResults []*pb.AlgorithmDependencyResultRow
+				if selfLookback.Timedelta > 0 {
+					searchFrom := window.GetTimeFrom().AsTime().Add(-time.Duration(selfLookback.Timedelta) * time.Nanosecond)
+					selfLookbackData, err := d.queries.ReadResultsForAlgorithmByTimedelta(ctx, ReadResultsForAlgorithmByTimedeltaParams{
+						AlgorithmID: pgtype.Int8{Int64: node.AlgoId(), Valid: true},
+						SearchFrom: pgtype.Timestamp{
+							Time:  searchFrom,
+							Valid: true,
+						},
+						SearchTo: pgtype.Timestamp{
+							Time:  searchTo,
+							Valid: true,
+						},
+					})
+					if err != nil {
+						return fmt.Errorf("could not retrieve self lookback results: %w", err)
+					}
+
+					for _, res := range selfLookbackData {
+						var resultPb *pb.Result
+
+						// parse out the window
+						windowMetadataPb, err := unmarshalToStructPb(res.WindowMetadata)
+						if err != nil {
+							return err
+						}
+						windowTimeFrom := timestamppb.Timestamp{
+							Seconds: res.WindowTimeFrom.Time.Unix(),
+							Nanos:   int32(res.WindowTimeFrom.Time.Nanosecond()),
+						}
+						windowTimeTo := timestamppb.Timestamp{
+							Seconds: res.WindowTimeTo.Time.Unix(),
+							Nanos:   int32(res.WindowTimeTo.Time.Nanosecond()),
+						}
+
+						switch res.ResultType {
+						case ResultTypeArray:
+							// TODO: handle this better
+							// is the result status known at this point in time?
+							// are results only recorded if successful?
+							var floatValues = make([]float32, len(res.ResultArray))
+							for ii, fv := range res.ResultArray {
+								floatValues[ii] = float32(fv)
+							}
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_FloatValues{
+									FloatValues: &pb.FloatArray{
+										Values: floatValues,
+									},
+								},
+							}
+						case ResultTypeStruct:
+							var data map[string]any
+							err := json.Unmarshal(res.ResultJson, &data)
+							if err != nil {
+								return err
+							}
+
+							result_Struct, err := structpb.NewStruct(data)
+							if err != nil {
+								return err
+							}
+
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_StructValue{
+									StructValue: result_Struct,
+								},
+							}
+						case ResultTypeValue:
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_SingleValue{
+									SingleValue: float32(res.ResultValue.Float64),
+								},
+							}
+						case ResultTypeNone:
+						// do nothing
+						default:
+							return fmt.Errorf("unsupported result type %v", res.ResultType)
+
+						}
+						selfResults = append(selfResults, &pb.AlgorithmDependencyResultRow{
+							Result: resultPb,
+							Window: &pb.Window{
+								TimeFrom:          &windowTimeFrom,
+								TimeTo:            &windowTimeTo,
+								Origin:            res.WindowOrigin,
+								WindowTypeName:    res.WindowTypeName,
+								WindowTypeVersion: res.WindowTypeVersion,
+								Metadata:          windowMetadataPb,
+							},
+						})
+					}
+				} else if selfLookback.Count > 0 {
+					selfLookbackData, err := d.queries.ReadResultsForAlgorithmByCount(ctx, ReadResultsForAlgorithmByCountParams{
+						AlgorithmID: pgtype.Int8{Int64: node.AlgoId(), Valid: true},
+						SearchTo: pgtype.Timestamp{
+							Time:  searchTo,
+							Valid: true,
+						},
+					})
+					if err != nil {
+						return fmt.Errorf("could not retrieve self lookback results: %w", err)
+					}
+
+					for _, res := range selfLookbackData {
+						var resultPb *pb.Result
+
+						// parse out the window
+						windowMetadataPb, err := unmarshalToStructPb(res.WindowMetadata)
+						if err != nil {
+							return err
+						}
+						windowTimeFrom := timestamppb.Timestamp{
+							Seconds: res.WindowTimeFrom.Time.Unix(),
+							Nanos:   int32(res.WindowTimeFrom.Time.Nanosecond()),
+						}
+						windowTimeTo := timestamppb.Timestamp{
+							Seconds: res.WindowTimeTo.Time.Unix(),
+							Nanos:   int32(res.WindowTimeTo.Time.Nanosecond()),
+						}
+
+						switch res.ResultType {
+						case ResultTypeArray:
+							// TODO: handle this better
+							// is the result status known at this point in time?
+							// are results only recorded if successful?
+							var floatValues = make([]float32, len(res.ResultArray))
+							for ii, fv := range res.ResultArray {
+								floatValues[ii] = float32(fv)
+							}
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_FloatValues{
+									FloatValues: &pb.FloatArray{
+										Values: floatValues,
+									},
+								},
+							}
+						case ResultTypeStruct:
+							var data map[string]any
+							err := json.Unmarshal(res.ResultJson, &data)
+							if err != nil {
+								return err
+							}
+
+							result_Struct, err := structpb.NewStruct(data)
+							if err != nil {
+								return err
+							}
+
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_StructValue{
+									StructValue: result_Struct,
+								},
+							}
+						case ResultTypeValue:
+							resultPb = &pb.Result{
+								Status: pb.ResultStatus_RESULT_STATUS_SUCEEDED,
+								ResultData: &pb.Result_SingleValue{
+									SingleValue: float32(res.ResultValue.Float64),
+								},
+							}
+						case ResultTypeNone:
+						// do nothing
+						default:
+							return fmt.Errorf("unsupported result type %v", res.ResultType)
+
+						}
+						selfResults = append(selfResults, &pb.AlgorithmDependencyResultRow{
+							Result: resultPb,
+							Window: &pb.Window{
+								TimeFrom:          &windowTimeFrom,
+								TimeTo:            &windowTimeTo,
+								Origin:            res.WindowOrigin,
+								WindowTypeName:    res.WindowTypeName,
+								WindowTypeVersion: res.WindowTypeVersion,
+								Metadata:          windowMetadataPb,
+							},
+						})
+					}
+				}
+
 				algorithmExecutions[ii] = &pb.ExecuteAlgorithm{
 					Algorithm: &pb.Algorithm{
 						Name:    algo.Name,
 						Version: algo.Version,
 					},
 					Dependencies: algorithm_dependencies,
+					SelfResults:  selfResults,
 				}
 			}
 
@@ -504,7 +696,7 @@ func convertStructToJsonBytes(s *structpb.Struct) ([]byte, error) {
 }
 
 func unmarshalToStructPb(data []byte) (*structpb.Struct, error) {
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}

@@ -248,6 +248,7 @@ SELECT
 	r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
+    a.result_type,
     r.result_value, 
     r.result_array,
     r.result_json,
@@ -262,6 +263,7 @@ FROM
 JOIN windows w ON
 	w.id = r.windows_id
 JOIN window_type wt on wt.id = w.window_type_id
+JOIN algorithm a on a.id = r.algorithm_id 
 WHERE
 	r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_from > sqlc.arg('search_from')
@@ -273,6 +275,7 @@ SELECT
 	r.id as result_id,
     r.algorithm_id,
     w.id as window_id,
+    a.result_type,
     r.result_value, 
     r.result_array,
     r.result_json,
@@ -287,6 +290,7 @@ FROM
 JOIN windows w on
 	w.id = r.windows_id
 JOIN window_type wt on wt.id = w.window_type_id
+JOIN algorithm a on a.id = r.algorithm_id
 WHERE
 	r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_to < sqlc.arg('search_to')
