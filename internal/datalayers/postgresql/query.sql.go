@@ -797,7 +797,7 @@ type ReadResultsForAlgorithmByCountParams struct {
 	AlgorithmID pgtype.Int8
 	SearchTo    pgtype.Timestamp
 	CountOffset int32
-	Count       int32
+	Limit       pgtype.Int4
 }
 
 type ReadResultsForAlgorithmByCountRow struct {
@@ -821,7 +821,7 @@ func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadRe
 		arg.AlgorithmID,
 		arg.SearchTo,
 		arg.CountOffset,
-		arg.Count,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
@@ -879,7 +879,7 @@ WHERE
     AND w.time_from > $2
     AND w.time_to < $3
 ORDER BY w.time_from, w.time_to DESC
-LIMIT $5 -- Added limit for consistency
+LIMIT $5
 OFFSET $4
 `
 
@@ -888,7 +888,7 @@ type ReadResultsForAlgorithmByTimedeltaParams struct {
 	SearchFrom  pgtype.Timestamp
 	SearchTo    pgtype.Timestamp
 	CountOffset int32
-	Limit       int32
+	Limit       pgtype.Int4
 }
 
 type ReadResultsForAlgorithmByTimedeltaRow struct {

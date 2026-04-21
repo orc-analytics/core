@@ -180,15 +180,22 @@ func processTasks(
 						if algoDep.Lookback.GapTimedelta > 0 {
 							searchTo = searchTo.Add(-time.Duration(algoDep.Lookback.GapTimedelta) * time.Nanosecond)
 						}
-						results, err := d.queries.ReadResultsForAlgorithmByCount(ctx, ReadResultsForAlgorithmByCountParams{
+						params := ReadResultsForAlgorithmByCountParams{
 							AlgorithmID: pgtype.Int8{Int64: algoDep.AlgoId, Valid: true},
-							Count:       int32(algoDep.Lookback.Count),
 							SearchTo: pgtype.Timestamp{
 								Time:  searchTo,
 								Valid: true,
 							},
 							CountOffset: int32(algoDep.Lookback.GapCount),
-						})
+						}
+						count := int32(algoDep.Lookback.Count)
+						if count > 0 {
+							params.Limit = pgtype.Int4{
+								Int32: count,
+								Valid: true,
+							}
+						}
+						results, err := d.queries.ReadResultsForAlgorithmByCount(ctx, params)
 
 						if err != nil {
 							return fmt.Errorf("could not read algorithm results with lookback count %d: %w", algoDep.Lookback.Count, err)
@@ -285,7 +292,7 @@ func processTasks(
 
 						if earliest_time_of_latest_result.After(search_from) {
 							// only run if we still have a valid lookback period
-							results, err := d.queries.ReadResultsForAlgorithmByTimedelta(ctx, ReadResultsForAlgorithmByTimedeltaParams{
+							params := ReadResultsForAlgorithmByTimedeltaParams{
 								AlgorithmID: pgtype.Int8{Int64: algoDep.AlgoId, Valid: true},
 								SearchFrom: pgtype.Timestamp{
 									Time:  search_from,
@@ -296,7 +303,15 @@ func processTasks(
 									Valid: true,
 								},
 								CountOffset: int32(algoDep.Lookback.GapCount),
-							})
+							}
+							count := int32(algoDep.Lookback.Count)
+							if count > 0 {
+								params.Limit = pgtype.Int4{
+									Int32: count,
+									Valid: true,
+								}
+							}
+							results, err := d.queries.ReadResultsForAlgorithmByTimedelta(ctx, params)
 
 							if err != nil {
 								return fmt.Errorf("could not read algorithm results with lookback count %d: %w", algoDep.Lookback.Count, err)
@@ -391,16 +406,16 @@ func processTasks(
 
 				// gather self results
 				selfLookback := node.SelfLookback()
-				searchTo := window.GetTimeFrom().AsTime()
-
+				windowSearchFrom := window.GetTimeFrom().AsTime() // search up to the start of the current window
 				var selfResults []*pb.AlgorithmDependencyResultRow
 				if selfLookback.Timedelta > 0 {
-					searchFrom := window.GetTimeFrom().AsTime().Add(-time.Duration(selfLookback.Timedelta) * time.Nanosecond)
+					searchFrom := windowSearchFrom.Add(-time.Duration(selfLookback.Timedelta))
+					var searchTo time.Time
 					if algo.SelfLookbackGapTimedelta > 0 {
-						searchTo = searchFrom.Add(-time.Duration(algo.SelfLookbackGapTimedelta) * time.Nanosecond)
+						searchTo = windowSearchFrom.Add(-time.Duration(algo.SelfLookbackGapTimedelta))
 					}
 					if searchTo.After(searchFrom) {
-						selfLookbackData, err := d.queries.ReadResultsForAlgorithmByTimedelta(ctx, ReadResultsForAlgorithmByTimedeltaParams{
+						params := ReadResultsForAlgorithmByTimedeltaParams{
 							AlgorithmID: pgtype.Int8{Int64: node.AlgoId(), Valid: true},
 							SearchFrom: pgtype.Timestamp{
 								Time:  searchFrom,
@@ -411,7 +426,15 @@ func processTasks(
 								Valid: true,
 							},
 							CountOffset: int32(node.SelfLookback().GapCount),
-						})
+						}
+						count := int32(node.SelfLookback().Count)
+						if count > 0 {
+							params.Limit = pgtype.Int4{
+								Int32: count,
+								Valid: true,
+							}
+						}
+						selfLookbackData, err := d.queries.ReadResultsForAlgorithmByTimedelta(ctx, params)
 						if err != nil {
 							return fmt.Errorf("could not retrieve self lookback results: %w", err)
 						}
@@ -495,17 +518,26 @@ func processTasks(
 						}
 					}
 				} else if selfLookback.Count > 0 {
+					var searchTo time.Time
 					if selfLookback.GapTimedelta > 0 {
-						searchTo = searchTo.Add(-time.Duration(selfLookback.GapTimedelta) * time.Nanosecond)
+						searchTo = windowSearchFrom.Add(-time.Duration(selfLookback.GapTimedelta) * time.Nanosecond)
 					}
-					selfLookbackData, err := d.queries.ReadResultsForAlgorithmByCount(ctx, ReadResultsForAlgorithmByCountParams{
+					params := ReadResultsForAlgorithmByCountParams{
 						AlgorithmID: pgtype.Int8{Int64: node.AlgoId(), Valid: true},
 						SearchTo: pgtype.Timestamp{
 							Time:  searchTo,
 							Valid: true,
 						},
 						CountOffset: int32(node.SelfLookback().GapCount),
-					})
+					}
+					count := int32(node.SelfLookback().Count)
+					if count > 0 {
+						params.Limit = pgtype.Int4{
+							Int32: count,
+							Valid: true,
+						}
+					}
+					selfLookbackData, err := d.queries.ReadResultsForAlgorithmByCount(ctx, params)
 					if err != nil {
 						return fmt.Errorf("could not retrieve self lookback results: %w", err)
 					}
