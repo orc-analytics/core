@@ -275,7 +275,7 @@ WHERE
     AND w.time_from > sqlc.arg('search_from')
     AND w.time_to < sqlc.arg('search_to')
 ORDER BY w.time_from, w.time_to DESC
-LIMIT sqlc.arg('limit') -- Added limit for consistency
+LIMIT sqlc.narg('limit')
 OFFSET sqlc.arg('count_offset');
 
 -- name: ReadResultsForAlgorithmByCount :many
@@ -301,5 +301,5 @@ WHERE
     r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_to < sqlc.arg('search_to')
 ORDER BY w.time_from, w.time_to DESC
-LIMIT sqlc.arg('count')
+LIMIT sqlc.narg('limit')
 OFFSET sqlc.arg('count_offset');

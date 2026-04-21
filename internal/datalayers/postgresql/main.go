@@ -129,13 +129,13 @@ func (d *Datalayer) RegisterProcessor(
 func (d *Datalayer) EmitWindow(
 	ctx context.Context,
 	window *pb.Window,
-) (pb.WindowEmitStatus, error) {
+) (_ pb.WindowEmitStatus, retErr error) {
 	slog.Debug("recieved emitted window", "window", window)
 
 	tx, err := d.WithTx(ctx)
 
 	defer func() {
-		if tx != nil {
+		if retErr != nil {
 			tx.Rollback(ctx)
 		}
 	}()
@@ -276,12 +276,21 @@ func (d *Datalayer) EmitWindow(
 		return pb.WindowEmitStatus{Status: pb.WindowEmitStatus_TRIGGERING_FAILED}, err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return pb.WindowEmitStatus{Status: pb.WindowEmitStatus_TRIGGERING_FAILED}, err
+	}
+
 	if len(executionPlan.Stages) > 0 {
-		go processTasks(d, executionPlan, window, insertedWindow)
+		go func() {
+			err := processTasks(d, executionPlan, window, insertedWindow)
+			if err != nil {
+				slog.Error("issue processing tasks", "error", err)
+			}
+		}()
 
 		return pb.WindowEmitStatus{
 			Status: pb.WindowEmitStatus_PROCESSING_TRIGGERED,
-		}, tx.Commit(ctx)
+		}, nil
 	}
 	return pb.WindowEmitStatus{
 		Status: pb.WindowEmitStatus_NO_TRIGGERED_ALGORITHMS,
