@@ -162,49 +162,6 @@ func (q *Queries) CreateAlgorithmDependency(ctx context.Context, arg CreateAlgor
 	return err
 }
 
-const createMetadata = `-- name: CreateMetadata :exec
-INSERT INTO metadata (
-  windows_id,
-  window_type_id,
-  metadata_key,
-  result_value,
-  result_array,
-  result_json
-) VALUES (
-  $1,
-  $2,
-  $3,
-  $4,
-  $5,
-  $6
-) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
-SET
-  result_value = EXCLUDED.result_value,
-  result_array = EXCLUDED.result_array,
-  result_json  = EXCLUDED.result_json
-`
-
-type CreateMetadataParams struct {
-	WindowsID    int64
-	WindowTypeID int64
-	MetadataKey  string
-	ResultValue  pgtype.Float8
-	ResultArray  []float64
-	ResultJson   []byte
-}
-
-func (q *Queries) CreateMetadata(ctx context.Context, arg CreateMetadataParams) error {
-	_, err := q.db.Exec(ctx, createMetadata,
-		arg.WindowsID,
-		arg.WindowTypeID,
-		arg.MetadataKey,
-		arg.ResultValue,
-		arg.ResultArray,
-		arg.ResultJson,
-	)
-	return err
-}
-
 const createMetadataField = `-- name: CreateMetadataField :one
 INSERT INTO metadata_fields (
   name,
@@ -1069,6 +1026,49 @@ func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const registerMetadata = `-- name: RegisterMetadata :exec
+INSERT INTO metadata (
+  windows_id,
+  window_type_id,
+  metadata_key,
+  result_value,
+  result_array,
+  result_json
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
+SET
+  result_value = EXCLUDED.result_value,
+  result_array = EXCLUDED.result_array,
+  result_json  = EXCLUDED.result_json
+`
+
+type RegisterMetadataParams struct {
+	WindowsID    int64
+	WindowTypeID int64
+	MetadataKey  string
+	ResultValue  pgtype.Float8
+	ResultArray  []float64
+	ResultJson   []byte
+}
+
+func (q *Queries) RegisterMetadata(ctx context.Context, arg RegisterMetadataParams) error {
+	_, err := q.db.Exec(ctx, registerMetadata,
+		arg.WindowsID,
+		arg.WindowTypeID,
+		arg.MetadataKey,
+		arg.ResultValue,
+		arg.ResultArray,
+		arg.ResultJson,
+	)
+	return err
 }
 
 const registerWindow = `-- name: RegisterWindow :one
