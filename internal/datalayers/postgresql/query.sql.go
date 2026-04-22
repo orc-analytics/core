@@ -1041,7 +1041,7 @@ func (q *Queries) ReadWindowTypeMetadataFields(ctx context.Context) ([]WindowTyp
 }
 
 const readWindowTypes = `-- name: ReadWindowTypes :many
-SELECT wt.id, wt.name, wt.version, wt.description, wt.created FROM window_type wt
+SELECT wt.id, wt.name, wt.version, wt.description, wt.created, wt.filter_keys FROM window_type wt
 `
 
 func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
@@ -1059,6 +1059,7 @@ func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
 			&i.Version,
 			&i.Description,
 			&i.Created,
+			&i.FilterKeys,
 		); err != nil {
 			return nil, err
 		}

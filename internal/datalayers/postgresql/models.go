@@ -193,6 +193,7 @@ type WindowType struct {
 	Version     string
 	Description string
 	Created     pgtype.Timestamp
+	FilterKeys  []string
 }
 
 type WindowTypeMetadataField struct {
