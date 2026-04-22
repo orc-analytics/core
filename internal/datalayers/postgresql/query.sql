@@ -196,15 +196,34 @@ INSERT INTO windows (
   window_type_id,
   time_from, 
   time_to,
-  origin, 
-  metadata
+  origin
 ) VALUES (
   (SELECT id FROM window_type_id),
   sqlc.arg('time_from'),
   sqlc.arg('time_to'),
-  sqlc.arg('origin'),
-  sqlc.arg('metadata')
+  sqlc.arg('origin')
 ) RETURNING window_type_id, id;
+
+-- name: CreateMetadata :exec
+INSERT INTO metadata (
+  windows_id,
+  window_type_id,
+  metadata_key,
+  result_value,
+  result_array,
+  result_json
+) VALUES (
+  sqlc.arg('windows_id'),
+  sqlc.arg('window_type_id'),
+  sqlc.arg('metadata_key'),
+  sqlc.arg('result_value'),
+  sqlc.arg('result_array'),
+  sqlc.arg('result_json')
+) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
+SET
+  result_value = EXCLUDED.result_value,
+  result_array = EXCLUDED.result_array,
+  result_json  = EXCLUDED.result_json;
 
 -- name: CreateResult :one
 INSERT INTO results (
@@ -265,7 +284,17 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    w.metadata as window_metadata
+    (
+      SELECT jsonb_object_agg(m.metadata_key, 
+        COALESCE(
+          to_jsonb(m.result_value),
+          to_jsonb(m.result_array),
+          m.result_json
+        )
+      )
+      FROM metadata m
+      WHERE m.windows_id = w.id
+    ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
@@ -292,7 +321,17 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    w.metadata as window_metadata
+    (
+      SELECT jsonb_object_agg(m.metadata_key, 
+        COALESCE(
+          to_jsonb(m.result_value),
+          to_jsonb(m.result_array),
+          m.result_json
+        )
+      )
+      FROM metadata m
+      WHERE m.windows_id = w.id
+    ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
