@@ -162,6 +162,49 @@ func (q *Queries) CreateAlgorithmDependency(ctx context.Context, arg CreateAlgor
 	return err
 }
 
+const createMetadata = `-- name: CreateMetadata :exec
+INSERT INTO metadata (
+  windows_id,
+  window_type_id,
+  metadata_key,
+  result_value,
+  result_array,
+  result_json
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6
+) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
+SET
+  result_value = EXCLUDED.result_value,
+  result_array = EXCLUDED.result_array,
+  result_json  = EXCLUDED.result_json
+`
+
+type CreateMetadataParams struct {
+	WindowsID    int64
+	WindowTypeID int64
+	MetadataKey  string
+	ResultValue  pgtype.Float8
+	ResultArray  []float64
+	ResultJson   []byte
+}
+
+func (q *Queries) CreateMetadata(ctx context.Context, arg CreateMetadataParams) error {
+	_, err := q.db.Exec(ctx, createMetadata,
+		arg.WindowsID,
+		arg.WindowTypeID,
+		arg.MetadataKey,
+		arg.ResultValue,
+		arg.ResultArray,
+		arg.ResultJson,
+	)
+	return err
+}
+
 const createMetadataField = `-- name: CreateMetadataField :one
 INSERT INTO metadata_fields (
   name,
@@ -780,7 +823,17 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    w.metadata as window_metadata
+    (
+      SELECT jsonb_object_agg(m.metadata_key, 
+        COALESCE(
+          to_jsonb(m.result_value),
+          to_jsonb(m.result_array),
+          m.result_json
+        )
+      )
+      FROM metadata m
+      WHERE m.windows_id = w.id
+    ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
@@ -869,7 +922,17 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    w.metadata as window_metadata
+    (
+      SELECT jsonb_object_agg(m.metadata_key, 
+        COALESCE(
+          to_jsonb(m.result_value),
+          to_jsonb(m.result_array),
+          m.result_json
+        )
+      )
+      FROM metadata m
+      WHERE m.windows_id = w.id
+    ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
@@ -1010,21 +1073,19 @@ func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
 const registerWindow = `-- name: RegisterWindow :one
 WITH window_type_id AS (
   SELECT id FROM window_type 
-  WHERE name = $5 
-  AND version = $6
+  WHERE name = $4 
+  AND version = $5
 )
 INSERT INTO windows (
   window_type_id,
   time_from, 
   time_to,
-  origin, 
-  metadata
+  origin
 ) VALUES (
   (SELECT id FROM window_type_id),
   $1,
   $2,
-  $3,
-  $4
+  $3
 ) RETURNING window_type_id, id
 `
 
@@ -1032,7 +1093,6 @@ type RegisterWindowParams struct {
 	TimeFrom          pgtype.Timestamp
 	TimeTo            pgtype.Timestamp
 	Origin            string
-	Metadata          []byte
 	WindowTypeName    string
 	WindowTypeVersion string
 }
@@ -1047,7 +1107,6 @@ func (q *Queries) RegisterWindow(ctx context.Context, arg RegisterWindowParams) 
 		arg.TimeFrom,
 		arg.TimeTo,
 		arg.Origin,
-		arg.Metadata,
 		arg.WindowTypeName,
 		arg.WindowTypeVersion,
 	)
