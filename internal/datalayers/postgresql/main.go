@@ -2,7 +2,7 @@ package postgresql
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	pb "github.com/orca-telemetry/contract/go"
 	"github.com/orca-telemetry/core/internal/dag"
@@ -19,13 +20,13 @@ import (
 func (d *Datalayer) RegisterProcessor(
 	ctx context.Context,
 	proc *pb.ProcessorRegistration,
-) error {
+) (txErr error) {
 	slog.Debug("registering processor", "processor", proc)
 
 	tx, err := d.WithTx(ctx)
 
 	defer func() {
-		if tx != nil {
+		if txErr != nil {
 			tx.Rollback(ctx)
 		}
 	}()
@@ -150,10 +151,11 @@ func (d *Datalayer) EmitWindow(
 
 	// marshal metadata
 	metadata := window.GetMetadata()
-	metadataBytes, err := metadata.MarshalJSON()
-	if err != nil {
-		return pb.WindowEmitStatus{}, fmt.Errorf("could not marshal metadata: %v", err)
-	}
+
+	// metadataBytes, err := metadata.MarshalJSON()
+	// if err != nil {
+	// 	return pb.WindowEmitStatus{}, fmt.Errorf("could not marshal metadata: %v", err)
+	// }
 
 	// check whether metadata is needed
 	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, ReadMetadataFieldsByWindowTypeParams{
@@ -164,17 +166,11 @@ func (d *Datalayer) EmitWindow(
 		return pb.WindowEmitStatus{}, fmt.Errorf("could not read metadata for window: %v", err)
 	}
 
-	// confident that any required metadata is being supplied to the processor
+	// gain confidence that any required metadata is being supplied to the processor
 	if len(metadataFields) > 0 {
-		var metadataMap map[string]any
-		if err := json.Unmarshal(metadataBytes, &metadataMap); err != nil {
-			return pb.WindowEmitStatus{}, fmt.Errorf("could not unmarshal metadata for validation: %v", err)
-		}
-
-		for _, mDataField := range metadataFields {
-			fieldName := mDataField.MetadataFieldName
-			if _, exists := metadataMap[fieldName]; !exists {
-				return pb.WindowEmitStatus{}, fmt.Errorf("required metadata field '%s' is missing", fieldName)
+		for _, v := range metadataFields {
+			if _, ok := metadata.Fields[v.MetadataFieldName]; !ok {
+				return pb.WindowEmitStatus{}, fmt.Errorf("required metadata field '%s' is missing", v.MetadataFieldName)
 			}
 		}
 	}
@@ -190,8 +186,7 @@ func (d *Datalayer) EmitWindow(
 			Time:  window.GetTimeTo().AsTime().UTC(),
 			Valid: true,
 		},
-		Origin:   window.GetOrigin(),
-		Metadata: metadataBytes,
+		Origin: window.GetOrigin(),
 	})
 	if err != nil {
 		slog.Error("could not insert window", "error", err)
@@ -202,6 +197,49 @@ func (d *Datalayer) EmitWindow(
 			)
 		}
 	}
+
+	for k, v := range metadata.Fields {
+		params := RegisterMetadataParams{
+			WindowsID:    insertedWindow.ID,
+			WindowTypeID: insertedWindow.WindowTypeID,
+			MetadataKey:  k,
+		}
+
+		switch v.Kind {
+		case &structpb.Value_ListValue{}:
+			lv := v.GetListValue().GetValues()
+			va := make([]float64, len(lv))
+			for ii, _v := range lv {
+				if (_v.Kind != &structpb.Value_NumberValue{}) {
+					slog.Error("found element in metadata that is not a number", "metadata", _v)
+					return pb.WindowEmitStatus{}, errors.New("could not insert window")
+				}
+				va[ii] = _v.GetNumberValue()
+			}
+			params.ResultArray = va
+		case &structpb.Value_NumberValue{}:
+			params.ResultValue = pgtype.Float8{
+				Float64: v.GetNumberValue(), Valid: true,
+			}
+		case &structpb.Value_StructValue{}:
+			resultBytes, err := v.MarshalJSON()
+			if err != nil {
+				slog.Error("could not marshal metadata", "error", err)
+				return pb.WindowEmitStatus{}, errors.New("error inserting metadata")
+			}
+			params.ResultJson = resultBytes
+		default:
+			slog.Error("cannot support metadata type", "kind", v.Kind)
+			return pb.WindowEmitStatus{}, errors.New("issue inserting metadata")
+		}
+
+		err := qtx.RegisterMetadata(ctx, params)
+		if err != nil {
+			slog.Error("could not register metadata", "error", err)
+			return pb.WindowEmitStatus{}, errors.New("issue inserting metadata")
+		}
+	}
+
 	slog.Debug("window record inserted into the datalayer", "window", insertedWindow)
 	execPaths, err := qtx.ReadAlgorithmExecutionPaths(
 		ctx,

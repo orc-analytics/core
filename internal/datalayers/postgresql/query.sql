@@ -204,7 +204,7 @@ INSERT INTO windows (
   sqlc.arg('origin')
 ) RETURNING window_type_id, id;
 
--- name: CreateMetadata :exec
+-- name: RegisterMetadata :exec
 INSERT INTO metadata (
   windows_id,
   window_type_id,
