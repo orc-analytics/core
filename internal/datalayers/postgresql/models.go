@@ -126,13 +126,6 @@ type AnnotationWindowType struct {
 	WindowTypeID int64
 }
 
-type ExpectedMetadatum struct {
-	WindowsID    int64
-	WindowTypeID int64
-	MetadataKey  interface{}
-	ValueType    string
-}
-
 type Metadata struct {
 	WindowsID    int64
 	WindowTypeID int64
@@ -151,12 +144,6 @@ type MetadataField struct {
 type MetadataFieldsReference struct {
 	WindowTypeID     int64
 	MetadataFieldsID int64
-}
-
-type MigrationCheck struct {
-	TotalWindows        int64
-	WindowsWithMetadata int64
-	TotalExpectedKeys   int64
 }
 
 type Processor struct {
