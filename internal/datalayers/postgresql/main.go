@@ -149,13 +149,7 @@ func (d *Datalayer) EmitWindow(
 	pgTx := tx.(*PgTx)
 	qtx := d.queries.WithTx(pgTx.tx)
 
-	// marshal metadata
 	metadata := window.GetMetadata()
-
-	// metadataBytes, err := metadata.MarshalJSON()
-	// if err != nil {
-	// 	return pb.WindowEmitStatus{}, fmt.Errorf("could not marshal metadata: %v", err)
-	// }
 
 	// check whether metadata is needed
 	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, ReadMetadataFieldsByWindowTypeParams{
@@ -205,23 +199,25 @@ func (d *Datalayer) EmitWindow(
 			MetadataKey:  k,
 		}
 
-		switch v.Kind {
-		case &structpb.Value_ListValue{}:
+		switch v.GetKind().(type) {
+		case *structpb.Value_ListValue:
 			lv := v.GetListValue().GetValues()
 			va := make([]float64, len(lv))
 			for ii, _v := range lv {
-				if (_v.Kind != &structpb.Value_NumberValue{}) {
+				switch _v.Kind.(type) {
+				case *structpb.Value_NumberValue:
+					va[ii] = _v.GetNumberValue()
+				default:
 					slog.Error("found element in metadata that is not a number", "metadata", _v)
 					return pb.WindowEmitStatus{}, errors.New("could not insert window")
 				}
-				va[ii] = _v.GetNumberValue()
 			}
 			params.ResultArray = va
-		case &structpb.Value_NumberValue{}:
+		case *structpb.Value_NumberValue:
 			params.ResultValue = pgtype.Float8{
 				Float64: v.GetNumberValue(), Valid: true,
 			}
-		case &structpb.Value_StructValue{}:
+		case *structpb.Value_StructValue:
 			resultBytes, err := v.MarshalJSON()
 			if err != nil {
 				slog.Error("could not marshal metadata", "error", err)
