@@ -11,6 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AlgorithmState string
+
+const (
+	AlgorithmStatePENDING         AlgorithmState = "PENDING"
+	AlgorithmStatePROCESSING      AlgorithmState = "PROCESSING"
+	AlgorithmStateSUCCEEDED       AlgorithmState = "SUCCEEDED"
+	AlgorithmStateFAILEDHANDLED   AlgorithmState = "FAILED_HANDLED"
+	AlgorithmStateFAILEDUNHANDLED AlgorithmState = "FAILED_UNHANDLED"
+)
+
+func (e *AlgorithmState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AlgorithmState(s)
+	case string:
+		*e = AlgorithmState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AlgorithmState: %T", src)
+	}
+	return nil
+}
+
+type NullAlgorithmState struct {
+	AlgorithmState AlgorithmState
+	Valid          bool // Valid is true if AlgorithmState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAlgorithmState) Scan(value interface{}) error {
+	if value == nil {
+		ns.AlgorithmState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AlgorithmState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAlgorithmState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AlgorithmState), nil
+}
+
 type ResultType string
 
 const (
@@ -53,6 +98,50 @@ func (ns NullResultType) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.ResultType), nil
+}
+
+type WindowState string
+
+const (
+	WindowStatePENDING            WindowState = "PENDING"
+	WindowStateFAILED             WindowState = "FAILED"
+	WindowStatePROCESSING         WindowState = "PROCESSING"
+	WindowStatePROCESSINGFINISHED WindowState = "PROCESSING_FINISHED"
+)
+
+func (e *WindowState) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = WindowState(s)
+	case string:
+		*e = WindowState(s)
+	default:
+		return fmt.Errorf("unsupported scan type for WindowState: %T", src)
+	}
+	return nil
+}
+
+type NullWindowState struct {
+	WindowState WindowState
+	Valid       bool // Valid is true if WindowState is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullWindowState) Scan(value interface{}) error {
+	if value == nil {
+		ns.WindowState, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.WindowState.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullWindowState) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.WindowState), nil
 }
 
 type Algorithm struct {
@@ -164,6 +253,8 @@ type Result struct {
 	ResultValue  pgtype.Float8
 	ResultArray  []float64
 	ResultJson   []byte
+	State        AlgorithmState
+	Error        []byte
 }
 
 type Window struct {
@@ -173,6 +264,7 @@ type Window struct {
 	TimeTo       pgtype.Timestamp
 	Origin       string
 	Created      pgtype.Timestamp
+	State        WindowState
 }
 
 type WindowType struct {

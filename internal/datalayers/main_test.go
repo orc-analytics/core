@@ -714,9 +714,9 @@ func TestAlgosSameNamesDifferentProcessors(t *testing.T) {
 	}
 
 	// 1. register the processors
+	// FIXME: go func that runs the window emits struggles to reach the DB here.
 	err = dlyr.RegisterProcessor(testCtx, &proc1)
 	assert.NoError(t, err)
 	err = dlyr.RegisterProcessor(testCtx, &proc2)
 	assert.NoError(t, err)
-
 }

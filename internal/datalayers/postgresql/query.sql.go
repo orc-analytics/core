@@ -218,7 +218,6 @@ type CreateProcessorParams struct {
 	ProjectName      pgtype.Text
 }
 
-// -------------------- Core Operations ----------------------
 func (q *Queries) CreateProcessor(ctx context.Context, arg CreateProcessorParams) error {
 	_, err := q.db.Exec(ctx, createProcessor,
 		arg.Name,
@@ -236,14 +235,18 @@ INSERT INTO results (
   algorithm_id, 
   result_value,
   result_array,
-  result_json
+  result_json,
+  state,
+  error
 ) VALUES (
   $1,
   $2,
   $3,
   $4,
   $5,
-  $6
+  $6,
+  $7,
+  $8
 ) RETURNING id
 `
 
@@ -254,6 +257,8 @@ type CreateResultParams struct {
 	ResultValue  pgtype.Float8
 	ResultArray  []float64
 	ResultJson   []byte
+	State        AlgorithmState
+	Err          []byte
 }
 
 func (q *Queries) CreateResult(ctx context.Context, arg CreateResultParams) (int64, error) {
@@ -264,6 +269,8 @@ func (q *Queries) CreateResult(ctx context.Context, arg CreateResultParams) (int
 		arg.ResultValue,
 		arg.ResultArray,
 		arg.ResultJson,
+		arg.State,
+		arg.Err,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -1205,4 +1212,18 @@ func (q *Queries) RegisterWindow(ctx context.Context, arg RegisterWindowParams) 
 	var i RegisterWindowRow
 	err := row.Scan(&i.WindowTypeID, &i.ID)
 	return i, err
+}
+
+const updateWindowState = `-- name: UpdateWindowState :exec
+UPDATE windows SET state = $1 WHERE id = $2
+`
+
+type UpdateWindowStateParams struct {
+	State    WindowState
+	WindowID int64
+}
+
+func (q *Queries) UpdateWindowState(ctx context.Context, arg UpdateWindowStateParams) error {
+	_, err := q.db.Exec(ctx, updateWindowState, arg.State, arg.WindowID)
+	return err
 }

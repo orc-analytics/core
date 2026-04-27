@@ -1,4 +1,3 @@
----------------------- Core Operations ----------------------  
 -- name: CreateProcessor :exec
 INSERT INTO processor (
   name,
@@ -210,6 +209,9 @@ INSERT INTO windows (
   sqlc.arg('origin')
 ) RETURNING window_type_id, id;
 
+-- name: UpdateWindowState :exec
+UPDATE windows SET state = sqlc.arg('state') WHERE id = sqlc.arg('window_id');
+
 -- name: RegisterMetadata :exec
 INSERT INTO metadata (
   windows_id,
@@ -238,14 +240,18 @@ INSERT INTO results (
   algorithm_id, 
   result_value,
   result_array,
-  result_json
+  result_json,
+  state,
+  error
 ) VALUES (
   sqlc.arg('windows_id'),
   sqlc.arg('window_type_id'),
   sqlc.arg('algorithm_id'),
   sqlc.arg('result_value'),
   sqlc.arg('result_array'),
-  sqlc.arg('result_json')
+  sqlc.arg('result_json'),
+  sqlc.arg('state'),
+  sqlc.arg('err')
 ) RETURNING id;
 
 -- name: ReadProcessors :many
