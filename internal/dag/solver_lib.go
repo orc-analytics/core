@@ -85,7 +85,8 @@ type ProcessorTask struct {
 	Nodes  []Node
 }
 
-// Stage represents a set of processor tasks that can be executed in parallel
+// Stage represents a sequence of tasks. Each task in this stage can be executed
+// in parallel
 type Stage struct {
 	Tasks []ProcessorTask
 }
@@ -94,6 +95,7 @@ type Stage struct {
 type Plan struct {
 	Stages             []Stage
 	AffectedProcessors []int64
+	NumAffectedAlgos   int64
 }
 
 // LayeredTopoSort returns the nodes of the directed graph g grouped into
@@ -361,6 +363,8 @@ func BuildPlan(
 
 		plan.Stages = append(plan.Stages, stage)
 	}
+
+	plan.NumAffectedAlgos = int64(len(nodeMap))
 
 	return plan, nil
 }

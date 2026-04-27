@@ -136,12 +136,6 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
-github.com/orca-telemetry/contract v1.5.0 h1:zQ2lOhNeN66q/OBWeN01pSrOZWKwcyc1xpOB2EaVwiU=
-github.com/orca-telemetry/contract v1.5.0/go.mod h1:o3TzvNM963aEkbCxAoiRgSE49xVxY/QMKNn1kc8+zXU=
-github.com/orca-telemetry/contract/go v0.0.0-20260422142503-a154821c3156 h1:fPPPapk+OQfw9YOr91xY3dYqso5hM6OZea1TPq1PeDQ=
-github.com/orca-telemetry/contract/go v0.0.0-20260422142503-a154821c3156/go.mod h1:LB0F+p03MNqKDvU6NVUIWT3sd1VlleRxxF20pYkK1Wg=
-github.com/orca-telemetry/contract/go v1.5.0 h1:2L73rYBCCol4Z7S7p/JUVJIufPl2jYu2W/BrF68CGyA=
-github.com/orca-telemetry/contract/go v1.5.0/go.mod h1:LB0F+p03MNqKDvU6NVUIWT3sd1VlleRxxF20pYkK1Wg=
 github.com/orca-telemetry/contract/go v1.6.0 h1:SwIW6QnU0o6AR8bELjGhezHJ9UKZZBhF3rHvzrBnyug=
 github.com/orca-telemetry/contract/go v1.6.0/go.mod h1:LB0F+p03MNqKDvU6NVUIWT3sd1VlleRxxF20pYkK1Wg=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=

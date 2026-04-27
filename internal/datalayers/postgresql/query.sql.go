@@ -232,21 +232,11 @@ const createResult = `-- name: CreateResult :one
 INSERT INTO results (
   windows_id,
   window_type_id, 
-  algorithm_id, 
-  result_value,
-  result_array,
-  result_json,
-  state,
-  error
+  algorithm_id
 ) VALUES (
   $1,
   $2,
-  $3,
-  $4,
-  $5,
-  $6,
-  $7,
-  $8
+  $3
 ) RETURNING id
 `
 
@@ -254,24 +244,10 @@ type CreateResultParams struct {
 	WindowsID    pgtype.Int8
 	WindowTypeID pgtype.Int8
 	AlgorithmID  pgtype.Int8
-	ResultValue  pgtype.Float8
-	ResultArray  []float64
-	ResultJson   []byte
-	State        AlgorithmState
-	Err          []byte
 }
 
 func (q *Queries) CreateResult(ctx context.Context, arg CreateResultParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createResult,
-		arg.WindowsID,
-		arg.WindowTypeID,
-		arg.AlgorithmID,
-		arg.ResultValue,
-		arg.ResultArray,
-		arg.ResultJson,
-		arg.State,
-		arg.Err,
-	)
+	row := q.db.QueryRow(ctx, createResult, arg.WindowsID, arg.WindowTypeID, arg.AlgorithmID)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -327,6 +303,37 @@ type CreateWindowTypeMetadataFieldBridgeParams struct {
 
 func (q *Queries) CreateWindowTypeMetadataFieldBridge(ctx context.Context, arg CreateWindowTypeMetadataFieldBridgeParams) error {
 	_, err := q.db.Exec(ctx, createWindowTypeMetadataFieldBridge, arg.WindowTypeID, arg.MetadataFieldsID)
+	return err
+}
+
+const finaliseResult = `-- name: FinaliseResult :exec
+UPDATE results SET
+    result_value = $1,
+    result_array = $2,
+    result_json = $3,
+    state = $4,
+    error = $5
+WHERE id = $6
+`
+
+type FinaliseResultParams struct {
+	ResultValue pgtype.Float8
+	ResultArray []float64
+	ResultJson  []byte
+	State       AlgorithmState
+	Err         []byte
+	ResultID    int64
+}
+
+func (q *Queries) FinaliseResult(ctx context.Context, arg FinaliseResultParams) error {
+	_, err := q.db.Exec(ctx, finaliseResult,
+		arg.ResultValue,
+		arg.ResultArray,
+		arg.ResultJson,
+		arg.State,
+		arg.Err,
+		arg.ResultID,
+	)
 	return err
 }
 
@@ -1212,6 +1219,20 @@ func (q *Queries) RegisterWindow(ctx context.Context, arg RegisterWindowParams) 
 	var i RegisterWindowRow
 	err := row.Scan(&i.WindowTypeID, &i.ID)
 	return i, err
+}
+
+const updateResultState = `-- name: UpdateResultState :exec
+UPDATE results SET state = $1 WHERE id = $2
+`
+
+type UpdateResultStateParams struct {
+	State    AlgorithmState
+	ResultID int64
+}
+
+func (q *Queries) UpdateResultState(ctx context.Context, arg UpdateResultStateParams) error {
+	_, err := q.db.Exec(ctx, updateResultState, arg.State, arg.ResultID)
+	return err
 }
 
 const updateWindowState = `-- name: UpdateWindowState :exec
