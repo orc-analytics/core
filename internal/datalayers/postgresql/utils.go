@@ -85,6 +85,42 @@ func setWindowStateToCompleted(ctx context.Context, qtx *Queries, err error, win
 	return oldErr
 }
 
+func setResultStateToProcessing(ctx context.Context, qtx *Queries, err error, resultId int64) error {
+	oldErr := err
+	err = qtx.UpdateResultState(ctx, UpdateResultStateParams{
+		State:    AlgorithmStatePROCESSING,
+		ResultID: resultId,
+	})
+
+	if err != nil {
+		slog.Error("could not update result state", "error", err)
+		if oldErr != nil {
+			return fmt.Errorf("%w & could not update result state to processing - %w", oldErr, err)
+		} else {
+			return fmt.Errorf("could not update result state to failed - %w", err)
+		}
+	}
+	return oldErr
+}
+
+func setResultStateToSucceeded(ctx context.Context, qtx *Queries, err error, resultId int64) error {
+	oldErr := err
+	err = qtx.UpdateResultState(ctx, UpdateResultStateParams{
+		State:    AlgorithmStateSUCCEEDED,
+		ResultID: resultId,
+	})
+
+	if err != nil {
+		slog.Error("could not update result state", "error", err)
+		if oldErr != nil {
+			return fmt.Errorf("%w & could not update result state to failed - %w", oldErr, err)
+		} else {
+			return fmt.Errorf("could not update result state to failed - %w", err)
+		}
+	}
+	return oldErr
+}
+
 // converts a structpb struct to a form that can be used to filter metadata
 // in the db
 type MetadataFilter struct {
@@ -181,6 +217,47 @@ func processTasks(
 	// get the environment
 	config := envs.GetConfig()
 
+	// go through the executionPlan and preallocate all the results in the Db
+	tx, err := d.WithTx(ctx)
+	defer tx.Rollback(ctx)
+	if err != nil {
+		slog.Error("could not start a transaction", "error", err)
+		return err
+	}
+
+	pgTx := tx.(*PgTx)
+	qtx := d.queries.WithTx(pgTx.tx)
+	algoIdResultMap := make(map[int64]int64, executionPlan.NumAffectedAlgos)
+
+	for _, stage := range executionPlan.Stages {
+		for _, task := range stage.Tasks {
+			for _, node := range task.Nodes {
+				resultId, err := qtx.CreateResult(ctx, CreateResultParams{
+					WindowsID: pgtype.Int8{
+						Int64: insertedWindow.ID,
+						Valid: true,
+					},
+					WindowTypeID: pgtype.Int8{
+						Int64: insertedWindow.WindowTypeID,
+						Valid: true,
+					},
+					AlgorithmID: pgtype.Int8{
+						Int64: node.AlgoId(),
+						Valid: true,
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("could not initialise result in db: %w", err)
+				}
+				algoIdResultMap[node.AlgoId()] = resultId
+			}
+		}
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("could not commit result initialisation to DB: %w", err)
+	}
+
 	// for each stage, build processsings
 	slog.Debug("execution plan", "executionPlan", executionPlan)
 	for _, stage := range executionPlan.Stages {
@@ -217,6 +294,7 @@ func processTasks(
 				slog.Error("could not connect to processor", "proc_id", task.ProcId, "error", err)
 				return fmt.Errorf("could not contact processor: %w", err)
 			}
+
 			// WARN: close conn when done (not deferred inside a loop)
 			defer func(conn *grpc.ClientConn) {
 				if err := conn.Close(); err != nil {
@@ -256,7 +334,17 @@ func processTasks(
 
 			algorithmExecutions := make([]*pb.ExecuteAlgorithm, len(task.Nodes))
 
+			// set up a transaction for the result state updates
+			tx, err := d.conn.Begin(ctx)
+			if err != nil {
+				slog.Error("could not start transaction for state updates", "error", err)
+				return err
+			}
+			defer tx.Rollback(ctx)
+			qtx := d.queries.WithTx(tx)
+
 			for ii, node := range task.Nodes {
+				// TODO: parallelise these nodes
 				algo, ok := algorithmMap[node.AlgoId()]
 
 				if !ok {
@@ -741,6 +829,24 @@ func processTasks(
 					Dependencies: algorithm_dependencies,
 					SelfResults:  selfResults,
 				}
+
+				// set the algorithm execution result
+				resId, ok := algoIdResultMap[node.AlgoId()]
+				if !ok {
+					slog.Error("could not set the result state - algo id not found in result map")
+					return errors.New("issue setting result state for algorithm")
+				}
+				err = setResultStateToProcessing(ctx, qtx, nil, resId)
+				if err != nil {
+					slog.Error("could not set the result state", "error", err)
+					return errors.New("could not set the result state of algorithm")
+				}
+			}
+
+			err = tx.Commit(ctx)
+			if err != nil {
+				slog.Error("could not complete transaction", "error", err)
+				return err
 			}
 
 			execReq := &pb.ExecutionRequest{
@@ -798,24 +904,28 @@ func processTasks(
 					"exec_id", result.GetExecId(),
 				)
 
-				var algoResultId int
+				var algoId int64
 				var resultType ResultType
 				for _, algo := range algorithms {
 					if (algo.Name == result.AlgorithmResult.GetAlgorithm().Name) &&
 						(algo.Version == result.AlgorithmResult.GetAlgorithm().Version) {
-						algoResultId = int(algo.ID)
+						algoId = int64(algo.ID)
 						resultType = algo.ResultType
 						break
 					}
 				}
 
-				// add the result in to the result map
-				resultMap[int64(algoResultId)] = result
+				resultId, ok := algoIdResultMap[algoId]
+				if !ok {
+					slog.Error("could not find result id for algorithm. result not inserted", "algoId", algoId)
+					continue
+				}
 
-				params := CreateResultParams{
-					WindowsID:    pgtype.Int8{Valid: true, Int64: insertedWindow.ID},
-					WindowTypeID: pgtype.Int8{Valid: true, Int64: insertedWindow.WindowTypeID},
-					AlgorithmID:  pgtype.Int8{Valid: true, Int64: int64(algoResultId)},
+				// add the result in to the result map
+				resultMap[algoId] = result
+
+				params := FinaliseResultParams{
+					ResultID: resultId,
 				}
 
 				// parse out the completion status
@@ -876,12 +986,12 @@ func processTasks(
 					continue
 				}
 
-				resultId, err := d.queries.CreateResult(ctx, params)
+				err = d.queries.FinaliseResult(ctx, params)
 				if err != nil {
 					slog.Error("error inserting result", "error", err)
 					continue
 				}
-				slog.Info("Inserted result", "resultId", resultId)
+				slog.Info("inserted result", "resultId")
 			}
 		}
 	}

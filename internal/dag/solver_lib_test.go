@@ -38,6 +38,7 @@ func TestBuildPlan(t *testing.T) {
 			selfLookbackGapTimedeltas: []string{"0.0.0"},
 			targetWindowId:            1,
 			want: Plan{
+				NumAffectedAlgos: 3,
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
@@ -68,6 +69,7 @@ func TestBuildPlan(t *testing.T) {
 			selfLookbackGapTimedeltas: []string{"0", "0"},
 			targetWindowId:            1,
 			want: Plan{
+				NumAffectedAlgos: 2,
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
@@ -93,6 +95,7 @@ func TestBuildPlan(t *testing.T) {
 			selfLookbackGapTimedeltas: []string{"0.0.0", "0.0.0"},
 			targetWindowId:            1,
 			want: Plan{
+				NumAffectedAlgos: 4,
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{{algoId: 1, procId: 1, algoDeps: nil, selfLookback: Lookback{Count: 0, Timedelta: 0}}}},
@@ -174,6 +177,7 @@ func TestBuildPlan(t *testing.T) {
 			selfLookbackGapTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
 			targetWindowId:            1,
 			want: Plan{
+				NumAffectedAlgos: 9,
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{
@@ -246,6 +250,7 @@ func TestBuildPlan(t *testing.T) {
 			selfLookbackGapTimedeltas: []string{"0.0.0", "0.0.0", "0.0.0.0"},
 			targetWindowId:            1,
 			want: Plan{
+				NumAffectedAlgos: 9,
 				Stages: []Stage{
 					{Tasks: []ProcessorTask{
 						{ProcId: 1, Nodes: []Node{

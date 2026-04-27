@@ -237,22 +237,24 @@ SET
 INSERT INTO results (
   windows_id,
   window_type_id, 
-  algorithm_id, 
-  result_value,
-  result_array,
-  result_json,
-  state,
-  error
+  algorithm_id
 ) VALUES (
   sqlc.arg('windows_id'),
   sqlc.arg('window_type_id'),
-  sqlc.arg('algorithm_id'),
-  sqlc.arg('result_value'),
-  sqlc.arg('result_array'),
-  sqlc.arg('result_json'),
-  sqlc.arg('state'),
-  sqlc.arg('err')
+  sqlc.arg('algorithm_id')
 ) RETURNING id;
+
+-- name: UpdateResultState :exec
+UPDATE results SET state = sqlc.arg('state') WHERE id = sqlc.arg('result_id');
+
+-- name: FinaliseResult :exec
+UPDATE results SET
+    result_value = sqlc.arg('result_value'),
+    result_array = sqlc.arg('result_array'),
+    result_json = sqlc.arg('result_json'),
+    state = sqlc.arg('state'),
+    error = sqlc.arg('err')
+WHERE id = sqlc.arg('result_id');
 
 -- name: ReadProcessors :many
 SELECT * FROM processor;
