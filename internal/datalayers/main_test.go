@@ -186,7 +186,7 @@ func TestLookbackDependenciesBetweenAlgorithms(t *testing.T) {
 	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
 	assert.NoError(t, err)
 
-	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset"}
+	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset", Filter: true}
 	fleet_id := pb.MetadataField{Name: "fleet_id", Description: "Unique ID of the fleet"}
 
 	windowType := pb.WindowType{

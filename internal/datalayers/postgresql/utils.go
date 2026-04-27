@@ -30,23 +30,47 @@ import (
 
 // converts a structpb struct to a form that can be used to filter metadata
 // in the db
-func metadataStructpbToFilter(metadata map[string]*structpb.Value) ([]byte, error) {
-	filterMap := make(map[string]any, len(metadata))
+type MetadataFilter struct {
+	Key   string `json:"key"`
+	Value any    `json:"value"`
+}
 
+func metadataStructpbToFilter(metadata map[string]*structpb.Value) ([]byte, error) {
+	filterArr := make([]MetadataFilter, len(metadata))
+
+	ii := 0
 	for k, v := range metadata {
 		switch v.GetKind().(type) {
 		case *structpb.Value_ListValue:
-			filterMap[k] = v.GetListValue()
+			vals := make([]float64, len(v.GetListValue().Values))
+			for ii, nV := range v.GetListValue().Values {
+				nVal, ok := nV.Kind.(*structpb.Value_NumberValue)
+				if !ok {
+					return nil, fmt.Errorf("found value in array that was not a number")
+				}
+				vals[ii] = nVal.NumberValue
+			}
+			filterArr[ii] = MetadataFilter{
+				Key:   k,
+				Value: vals,
+			}
 		case *structpb.Value_NumberValue:
-			filterMap[k] = v.GetNumberValue()
+			filterArr[ii] = MetadataFilter{
+				Key:   k,
+				Value: v.GetNumberValue(),
+			}
 		case *structpb.Value_StructValue:
-			filterMap[k] = v.GetStructValue()
+			filterArr[ii] = MetadataFilter{
+				Key:   k,
+				Value: v.GetStructValue().AsMap(),
+			}
 		default:
 			slog.Error("unsupported type", "type", reflect.TypeOf(v.GetKind()))
 			return nil, fmt.Errorf("unsupported type")
 		}
+		ii += 1
 	}
-	return json.Marshal(filterMap)
+	return json.Marshal(filterArr)
 }
 
 func processTasks(
