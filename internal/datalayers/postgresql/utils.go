@@ -28,6 +28,63 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func setWindowStateToFailed(ctx context.Context, qtx *Queries, err error, windowId int64) error {
+	oldErr := err
+	// update the window record to state the procesing intent
+	err = qtx.UpdateWindowState(ctx, UpdateWindowStateParams{
+		State:    WindowStateFAILED,
+		WindowID: int64(windowId),
+	})
+
+	if err != nil {
+		slog.Error("could not update window state", "error", err)
+		if oldErr != nil {
+			return fmt.Errorf("%w & could not update window state to failed - %w", oldErr, err)
+		} else {
+			return fmt.Errorf("could not update window state to failed - %w", err)
+		}
+	}
+	return oldErr
+}
+
+func setWindowStateToProcessing(ctx context.Context, qtx *Queries, err error, windowId int64) error {
+	oldErr := err
+	// update the window record to state the procesing intent
+	err = qtx.UpdateWindowState(ctx, UpdateWindowStateParams{
+		State:    WindowStatePROCESSING,
+		WindowID: int64(windowId),
+	})
+
+	if err != nil {
+		slog.Error("could not update window state", "error", err)
+		if oldErr != nil {
+			return fmt.Errorf("%w & could not update window state to failed - %w", oldErr, err)
+		} else {
+			return fmt.Errorf("could not update window state to failed - %w", err)
+		}
+	}
+	return oldErr
+}
+
+func setWindowStateToCompleted(ctx context.Context, qtx *Queries, err error, windowId int64) error {
+	oldErr := err
+	// update the window record to state the procesing intent
+	err = qtx.UpdateWindowState(ctx, UpdateWindowStateParams{
+		State:    WindowStatePROCESSINGFINISHED,
+		WindowID: int64(windowId),
+	})
+
+	if err != nil {
+		slog.Error("could not update window state", "error", err)
+		if oldErr != nil {
+			return fmt.Errorf("%w & could not update window state to failed - %w", oldErr, err)
+		} else {
+			return fmt.Errorf("could not update window state to failed - %w", err)
+		}
+	}
+	return oldErr
+}
+
 // converts a structpb struct to a form that can be used to filter metadata
 // in the db
 type MetadataFilter struct {
@@ -113,10 +170,14 @@ func processTasks(
 		WindowTypeName:    window.WindowTypeName,
 		WindowTypeVersion: window.WindowTypeVersion,
 	})
+	if err != nil {
+		return err
+	}
 
 	for _, algo := range algorithms {
 		algorithmMap[algo.ID] = algo
 	}
+
 	// get the environment
 	config := envs.GetConfig()
 
@@ -703,7 +764,8 @@ func processTasks(
 			// recieve streamed execution results
 			for {
 				result, err := stream.Recv()
-				// error handling
+
+				// handle errors in the stream process
 				if err != nil {
 					if errors.Is(err, context.Canceled) ||
 						errors.Is(err, context.DeadlineExceeded) {
@@ -727,16 +789,22 @@ func processTasks(
 					)
 					return err
 				}
+				// WARN: from hereon, any errors are powered through, so as to not
+				// risk missing results.
+				// instead, we should log these errors (if possible) outside of just
+				// stdout - a broader issue
 
-				slog.Info("received execution result",
+				slog.Debug("received execution result",
 					"exec_id", result.GetExecId(),
 				)
 
 				var algoResultId int
+				var resultType ResultType
 				for _, algo := range algorithms {
 					if (algo.Name == result.AlgorithmResult.GetAlgorithm().Name) &&
 						(algo.Version == result.AlgorithmResult.GetAlgorithm().Version) {
 						algoResultId = int(algo.ID)
+						resultType = algo.ResultType
 						break
 					}
 				}
@@ -744,41 +812,80 @@ func processTasks(
 				// add the result in to the result map
 				resultMap[int64(algoResultId)] = result
 
-				structResult, err := convertStructToJsonBytes(
-					result.AlgorithmResult.Result.GetStructValue(),
-				)
-				if err != nil {
-					slog.Error(
-						"Issue converted algorithm struct result to bytes",
-						"error",
-						err,
-						"struct",
-						result.AlgorithmResult.Result.GetStructValue(),
-					)
-					return err
-				}
-
-				resultId, err := d.queries.CreateResult(ctx, CreateResultParams{
+				params := CreateResultParams{
 					WindowsID:    pgtype.Int8{Valid: true, Int64: insertedWindow.ID},
 					WindowTypeID: pgtype.Int8{Valid: true, Int64: insertedWindow.WindowTypeID},
 					AlgorithmID:  pgtype.Int8{Valid: true, Int64: int64(algoResultId)},
-					ResultValue: pgtype.Float8{
+				}
+
+				// parse out the completion status
+				switch result.GetAlgorithmResult().GetResult().Status {
+				case pb.ResultStatus_RESULT_STATUS_SUCEEDED:
+					params.State = AlgorithmStateSUCCEEDED
+				case pb.ResultStatus_RESULT_STATUS_UNHANDLED_FAILED:
+					params.State = AlgorithmStateFAILEDUNHANDLED
+					resultErr, err := result.GetAlgorithmResult().GetResult().GetError().MarshalJSON()
+					if err != nil {
+						slog.Error("could not marshal error struct", "error", err)
+						continue
+					}
+					params.Err = resultErr
+				case pb.ResultStatus_RESULT_STATUS_HANDLED_FAILED:
+					params.State = AlgorithmStateFAILEDHANDLED
+					resultErr, err := result.GetAlgorithmResult().GetResult().GetError().MarshalJSON()
+					if err != nil {
+						slog.Error("could not marshal error struct", "error", err)
+						continue
+					}
+					params.Err = resultErr
+				default:
+					slog.Error("unsupported result status", "status", result.GetAlgorithmResult().GetResult().GetStatus())
+				}
+
+				// parse out the result
+				switch resultType {
+				case ResultTypeNone:
+					continue
+				case ResultTypeValue:
+					params.ResultValue = pgtype.Float8{
 						Valid:   true,
 						Float64: float64(result.AlgorithmResult.Result.GetSingleValue()),
-					},
-					ResultArray: convertFloat32ToFloat64(
+					}
+				case ResultTypeArray:
+					params.ResultArray = convertFloat32ToFloat64(
 						result.AlgorithmResult.Result.GetFloatValues().GetValues(),
-					),
-					ResultJson: structResult,
-				})
+					)
+
+				case ResultTypeStruct:
+					structResult, err := convertStructToJsonBytes(
+						result.AlgorithmResult.Result.GetStructValue(),
+					)
+					if err != nil {
+						slog.Error(
+							"issue converting algorithm struct result to bytes",
+							"error",
+							err,
+							"resultStruct",
+							result.AlgorithmResult.Result.GetStructValue(),
+						)
+						continue
+					}
+					params.ResultJson = structResult
+				default:
+					slog.Error("unknown result type recieved from algorithm", "type", resultType)
+					continue
+				}
+
+				resultId, err := d.queries.CreateResult(ctx, params)
 				if err != nil {
-					slog.Error("Error inserting result", "error", err)
-					return err
+					slog.Error("error inserting result", "error", err)
+					continue
 				}
 				slog.Info("Inserted result", "resultId", resultId)
 			}
 		}
 	}
+
 	return nil
 }
 

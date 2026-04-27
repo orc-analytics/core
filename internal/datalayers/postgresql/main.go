@@ -136,6 +136,11 @@ func (d *Datalayer) EmitWindow(
 	tx, err := d.WithTx(ctx)
 
 	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback(ctx)
+			return
+		}
+
 		if retErr != nil {
 			tx.Rollback(ctx)
 		}
@@ -231,8 +236,10 @@ func (d *Datalayer) EmitWindow(
 				case *structpb.Value_NumberValue:
 					va[ii] = _v.GetNumberValue()
 				default:
+					err = errors.New("could not insert window")
+					err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
 					slog.Error("found element in metadata that is not a number", "metadata", _v)
-					return pb.WindowEmitStatus{}, errors.New("could not insert window")
+					return pb.WindowEmitStatus{}, err
 				}
 			}
 			params.MetadataArray = va
@@ -244,18 +251,24 @@ func (d *Datalayer) EmitWindow(
 			resultBytes, err := v.MarshalJSON()
 			if err != nil {
 				slog.Error("could not marshal metadata", "error", err)
-				return pb.WindowEmitStatus{}, errors.New("error inserting metadata")
+				err = errors.New("error inserting metadata")
+				err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
+				return pb.WindowEmitStatus{}, err
 			}
 			params.MetadataJson = resultBytes
 		default:
 			slog.Error("cannot support metadata type", "kind", v.Kind)
-			return pb.WindowEmitStatus{}, errors.New("issue inserting metadata")
+			err = errors.New("issue inserting metadata")
+			err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
+			return pb.WindowEmitStatus{}, err
 		}
 
 		err := qtx.RegisterMetadata(ctx, params)
 		if err != nil {
 			slog.Error("could not register metadata", "error", err)
-			return pb.WindowEmitStatus{}, errors.New("issue inserting metadata")
+			err = errors.New("issue inserting metadata")
+			err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
+			return pb.WindowEmitStatus{}, err
 		}
 	}
 
@@ -265,6 +278,8 @@ func (d *Datalayer) EmitWindow(
 		strconv.Itoa(int(insertedWindow.WindowTypeID)),
 	)
 	if err != nil {
+		err = errors.New("could not read execution paths")
+		err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
 		slog.Error(
 			"could not read execution paths for window id",
 			"window_id",
@@ -330,18 +345,34 @@ func (d *Datalayer) EmitWindow(
 			"error",
 			err,
 		)
+		err = errors.New("could not build execution plan")
+		err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
 		return pb.WindowEmitStatus{Status: pb.WindowEmitStatus_TRIGGERING_FAILED}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		slog.Error("failed to commit transaction", "error", err)
+		err = errors.New("failed to commit transaction")
+		err = setWindowStateToFailed(ctx, qtx, err, insertedWindow.ID)
 		return pb.WindowEmitStatus{Status: pb.WindowEmitStatus_TRIGGERING_FAILED}, err
 	}
 
 	if len(executionPlan.Stages) > 0 {
+		// update the window record to state the procesing intent
+		err = setWindowStateToProcessing(ctx, d.queries, nil, insertedWindow.ID)
+
+		if err != nil {
+			slog.Error("could not update window state", "error", err)
+			return pb.WindowEmitStatus{Status: pb.WindowEmitStatus_TRIGGERING_FAILED}, errors.New("could not update window state")
+		}
+
 		go func() {
 			err := processTasks(d, executionPlan, window, insertedWindow, metadataFilterBytes)
 			if err != nil {
+				err = setWindowStateToFailed(ctx, d.queries, err, insertedWindow.ID)
 				slog.Error("issue processing tasks", "error", err)
+			} else {
+				setWindowStateToCompleted(ctx, d.queries, nil, insertedWindow.ID)
 			}
 		}()
 
