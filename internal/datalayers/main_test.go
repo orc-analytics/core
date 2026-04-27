@@ -682,7 +682,7 @@ func TestAlgosSameNamesDifferentProcessors(t *testing.T) {
 
 	windowType := pb.WindowType{
 		Name:    "TestWindow",
-		Version: "4.0.0",
+		Version: "4.0.1",
 	}
 
 	algo1 := pb.Algorithm{
@@ -718,4 +718,5 @@ func TestAlgosSameNamesDifferentProcessors(t *testing.T) {
 	assert.NoError(t, err)
 	err = dlyr.RegisterProcessor(testCtx, &proc2)
 	assert.NoError(t, err)
+
 }
