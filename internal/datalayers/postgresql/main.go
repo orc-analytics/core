@@ -56,7 +56,7 @@ func (d *Datalayer) RegisterProcessor(
 		}
 
 		// read any existing metadata fields for the window
-		metadataFieldsAsStored, err := d.readMetadataFieldsByWindowType(ctx, tx, windowType)
+		metadataFieldsAsStored, err := d.readMetadataFieldsByWindowType(ctx, tx, windowTypeId)
 		if err != nil {
 			return err
 		}
@@ -151,21 +151,44 @@ func (d *Datalayer) EmitWindow(
 
 	metadata := window.GetMetadata()
 
-	// check whether metadata is needed
-	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, ReadMetadataFieldsByWindowTypeParams{
-		WindowTypeName:    window.GetWindowTypeName(),
-		WindowTypeVersion: window.GetWindowTypeVersion(),
+	// get the window type id
+	windowType, err := qtx.ReadWindowTypesByName(ctx, ReadWindowTypesByNameParams{
+		Name:    window.GetWindowTypeName(),
+		Version: window.GetWindowTypeVersion(),
 	})
+
 	if err != nil {
-		return pb.WindowEmitStatus{}, fmt.Errorf("could not read metadata for window: %v", err)
+		return pb.WindowEmitStatus{}, fmt.Errorf("could not find requested window: %v", err)
+	}
+	if len(windowType) > 1 {
+		slog.Error("more than one window type found", "name", window.GetWindowTypeName(), "version", window.GetWindowTypeVersion())
+		return pb.WindowEmitStatus{}, fmt.Errorf("more than one window found for name and version")
+
 	}
 
+	// check whether metadata is needed
+	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, windowType[0].ID)
+	if err != nil {
+		return pb.WindowEmitStatus{}, fmt.Errorf("could not read metadata for window: %w", err)
+	}
+	metadataFilter := make(map[string]*structpb.Value, len(metadataFields))
+	var metadataFilterBytes []byte = nil
+
 	// gain confidence that any required metadata is being supplied to the processor
+	// and construct metadata filtering
 	if len(metadataFields) > 0 {
 		for _, v := range metadataFields {
-			if _, ok := metadata.Fields[v.MetadataFieldName]; !ok {
-				return pb.WindowEmitStatus{}, fmt.Errorf("required metadata field '%s' is missing", v.MetadataFieldName)
+			mdf, ok := metadata.Fields[v.Name]
+			if !ok {
+				return pb.WindowEmitStatus{}, fmt.Errorf("required metadata field '%s' is missing", v.Name)
 			}
+			if v.Filter.Bool {
+				metadataFilter[v.Name] = mdf
+			}
+		}
+		metadataFilterBytes, err = metadataStructpbToFilter(metadataFilter)
+		if err != nil {
+			return pb.WindowEmitStatus{}, fmt.Errorf("could not parse metadata filter data: %w", err)
 		}
 	}
 
@@ -212,9 +235,9 @@ func (d *Datalayer) EmitWindow(
 					return pb.WindowEmitStatus{}, errors.New("could not insert window")
 				}
 			}
-			params.ResultArray = va
+			params.MetadataArray = va
 		case *structpb.Value_NumberValue:
-			params.ResultValue = pgtype.Float8{
+			params.MetadataValue = pgtype.Float8{
 				Float64: v.GetNumberValue(), Valid: true,
 			}
 		case *structpb.Value_StructValue:
@@ -223,7 +246,7 @@ func (d *Datalayer) EmitWindow(
 				slog.Error("could not marshal metadata", "error", err)
 				return pb.WindowEmitStatus{}, errors.New("error inserting metadata")
 			}
-			params.ResultJson = resultBytes
+			params.MetadataJson = resultBytes
 		default:
 			slog.Error("cannot support metadata type", "kind", v.Kind)
 			return pb.WindowEmitStatus{}, errors.New("issue inserting metadata")
@@ -316,7 +339,7 @@ func (d *Datalayer) EmitWindow(
 
 	if len(executionPlan.Stages) > 0 {
 		go func() {
-			err := processTasks(d, executionPlan, window, insertedWindow)
+			err := processTasks(d, executionPlan, window, insertedWindow, metadataFilterBytes)
 			if err != nil {
 				slog.Error("issue processing tasks", "error", err)
 			}

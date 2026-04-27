@@ -94,6 +94,10 @@ func (d *Datalayer) createMetadataField(
 	metadataFieldId, err := qtx.CreateMetadataField(ctx, CreateMetadataFieldParams{
 		Name:        metadataField.GetName(),
 		Description: metadataField.GetDescription(),
+		Filter: pgtype.Bool{
+			Bool:  metadataField.GetFilter(),
+			Valid: true,
+		},
 	})
 	if err != nil {
 		slog.Error("could not create metadata field", "error", err)
@@ -105,14 +109,13 @@ func (d *Datalayer) createMetadataField(
 func (d *Datalayer) readMetadataFieldsByWindowType(
 	ctx context.Context,
 	tx types.Tx,
-	windowType *pb.WindowType,
+	windowTypeId int64,
 ) ([]*pb.MetadataField, error) {
 	pgTx := tx.(*PgTx)
 	qtx := d.queries.WithTx(pgTx.tx)
-	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, ReadMetadataFieldsByWindowTypeParams{
-		WindowTypeName:    windowType.GetName(),
-		WindowTypeVersion: windowType.GetVersion(),
-	})
+
+	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, windowTypeId)
+
 	if err != nil {
 		return []*pb.MetadataField{}, fmt.Errorf("could not read metadata fields: %v", err)
 
@@ -120,8 +123,9 @@ func (d *Datalayer) readMetadataFieldsByWindowType(
 	metadataFieldsPb := make([]*pb.MetadataField, len(metadataFields))
 	for ii, field := range metadataFields {
 		metadataFieldsPb[ii] = &pb.MetadataField{
-			Name:        field.MetadataFieldName,
-			Description: field.MetadataFieldDescription,
+			Name:        field.Name,
+			Description: field.Description,
+			Filter:      field.Filter.Bool,
 		}
 	}
 	return metadataFieldsPb, nil

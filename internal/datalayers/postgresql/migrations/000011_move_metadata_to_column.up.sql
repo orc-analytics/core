@@ -7,9 +7,9 @@ CREATE TABLE metadata (
   windows_id     BIGINT,
   window_type_id BIGINT,
   metadata_key   TEXT,
-  result_value   DOUBLE PRECISION,
-  result_array   DOUBLE PRECISION[],
-  result_json    JSONB,
+  metadata_value   DOUBLE PRECISION,
+  metadata_array   DOUBLE PRECISION[],
+  metadata_json    JSONB,
   PRIMARY KEY (windows_id, window_type_id, metadata_key),
   FOREIGN KEY (windows_id)     REFERENCES windows(id),
   FOREIGN KEY (window_type_id) REFERENCES window_type(id),
@@ -17,16 +17,16 @@ CREATE TABLE metadata (
   -- Automatically aborts the transaction if an unhandled JSON type 
   -- (like a string or boolean) tries to insert all NULLs.
   CONSTRAINT metadata_has_valid_type_chk CHECK (
-    result_value IS NOT NULL OR 
-    result_array IS NOT NULL OR 
-    result_json  IS NOT NULL
+    metadata_value IS NOT NULL OR 
+    metadata_array IS NOT NULL OR 
+    metadata_json  IS NOT NULL
   )
 );
 
 -- ============================================================
 -- 2. MIGRATE
 -- ============================================================
-INSERT INTO metadata (windows_id, window_type_id, metadata_key, result_value, result_array, result_json)
+INSERT INTO metadata (windows_id, window_type_id, metadata_key, metadata_value, metadata_array, metadata_json)
 SELECT
   w.id,
   w.window_type_id,

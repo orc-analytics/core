@@ -165,10 +165,12 @@ func (q *Queries) CreateAlgorithmDependency(ctx context.Context, arg CreateAlgor
 const createMetadataField = `-- name: CreateMetadataField :one
 INSERT INTO metadata_fields (
   name,
-  description
+  description,
+  filter
 ) VALUES (
   $1,
-  $2
+  $2,
+  $3
 ) ON CONFLICT (name) DO UPDATE
 SET
   name = EXCLUDED.name,
@@ -179,10 +181,11 @@ RETURNING id
 type CreateMetadataFieldParams struct {
 	Name        string
 	Description string
+	Filter      pgtype.Bool
 }
 
 func (q *Queries) CreateMetadataField(ctx context.Context, arg CreateMetadataFieldParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createMetadataField, arg.Name, arg.Description)
+	row := q.db.QueryRow(ctx, createMetadataField, arg.Name, arg.Description, arg.Filter)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -605,7 +608,7 @@ func (q *Queries) ReadFromAlgorithmDependencies(ctx context.Context, arg ReadFro
 }
 
 const readMetadataFields = `-- name: ReadMetadataFields :many
-SELECT id, name, description FROM metadata_fields
+SELECT id, name, description, filter FROM metadata_fields
 `
 
 func (q *Queries) ReadMetadataFields(ctx context.Context) ([]MetadataField, error) {
@@ -617,7 +620,12 @@ func (q *Queries) ReadMetadataFields(ctx context.Context) ([]MetadataField, erro
 	var items []MetadataField
 	for rows.Next() {
 		var i MetadataField
-		if err := rows.Scan(&i.ID, &i.Name, &i.Description); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Filter,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -629,37 +637,28 @@ func (q *Queries) ReadMetadataFields(ctx context.Context) ([]MetadataField, erro
 }
 
 const readMetadataFieldsByWindowType = `-- name: ReadMetadataFieldsByWindowType :many
-SELECT 
-    metadata_field_id,
-    metadata_field_name,
-    metadata_field_description
-FROM window_type_metadata_fields
-WHERE window_type_name = $1
-  AND window_type_version = $2
-ORDER BY metadata_field_name
+SELECT m.id, m.name, m.description, m.filter FROM 
+metadata_fields m
+JOIN metadata_fields_references ON m.id = metadata_fields_references.metadata_fields_id
+WHERE window_type_id = $1
+ORDER BY m.name
 `
 
-type ReadMetadataFieldsByWindowTypeParams struct {
-	WindowTypeName    string
-	WindowTypeVersion string
-}
-
-type ReadMetadataFieldsByWindowTypeRow struct {
-	MetadataFieldID          int64
-	MetadataFieldName        string
-	MetadataFieldDescription string
-}
-
-func (q *Queries) ReadMetadataFieldsByWindowType(ctx context.Context, arg ReadMetadataFieldsByWindowTypeParams) ([]ReadMetadataFieldsByWindowTypeRow, error) {
-	rows, err := q.db.Query(ctx, readMetadataFieldsByWindowType, arg.WindowTypeName, arg.WindowTypeVersion)
+func (q *Queries) ReadMetadataFieldsByWindowType(ctx context.Context, windowTypeID int64) ([]MetadataField, error) {
+	rows, err := q.db.Query(ctx, readMetadataFieldsByWindowType, windowTypeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ReadMetadataFieldsByWindowTypeRow
+	var items []MetadataField
 	for rows.Next() {
-		var i ReadMetadataFieldsByWindowTypeRow
-		if err := rows.Scan(&i.MetadataFieldID, &i.MetadataFieldName, &i.MetadataFieldDescription); err != nil {
+		var i MetadataField
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Filter,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -780,34 +779,62 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    (
-      SELECT jsonb_object_agg(m.metadata_key, 
+    jsonb_object_agg(m.metadata_key, 
         COALESCE(
           to_jsonb(m.result_value),
           to_jsonb(m.result_array),
           m.result_json
         )
-      )
-      FROM metadata m
-      WHERE m.windows_id = w.id
-    ) AS window_metadata
+      ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
 JOIN algorithm a ON a.id = r.algorithm_id
+JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = $1
     AND w.time_to < $2
+GROUP BY
+    r.id, r.algorithm_id, w.id, a.result_type,
+    r.result_value, r.result_array, r.result_json,
+    wt.name, wt.version, w.time_from, w.time_to, w.origin
+HAVING
+    -- No filter applied
+    (
+        $3::jsonb IS NULL
+    )
+    OR (
+        -- Every filter entry must be satisfied by some metadata row on this window
+        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
+        $3::jsonb IS NOT NULL
+        AND NOT EXISTS (
+            -- Check that no filter goes unsatisfied
+            SELECT 1
+            FROM jsonb_array_elements($3::jsonb) AS f
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM metadata m2
+                WHERE m2.windows_id = r.windows_id
+                  AND m2.metadata_key = f->>'key'
+                  AND (
+                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
+                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
+                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                  )
+            )
+        )
+    )
 ORDER BY w.time_from, w.time_to DESC
-LIMIT $4
-OFFSET $3
+LIMIT $5
+OFFSET $4
 `
 
 type ReadResultsForAlgorithmByCountParams struct {
-	AlgorithmID pgtype.Int8
-	SearchTo    pgtype.Timestamp
-	CountOffset int32
-	Limit       pgtype.Int4
+	AlgorithmID     pgtype.Int8
+	SearchTo        pgtype.Timestamp
+	MetadataFilters []byte
+	CountOffset     int32
+	Limit           pgtype.Int4
 }
 
 type ReadResultsForAlgorithmByCountRow struct {
@@ -830,6 +857,7 @@ func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadRe
 	rows, err := q.db.Query(ctx, readResultsForAlgorithmByCount,
 		arg.AlgorithmID,
 		arg.SearchTo,
+		arg.MetadataFilters,
 		arg.CountOffset,
 		arg.Limit,
 	)
@@ -879,36 +907,63 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    (
-      SELECT jsonb_object_agg(m.metadata_key, 
+    jsonb_object_agg(m.metadata_key,
         COALESCE(
           to_jsonb(m.result_value),
           to_jsonb(m.result_array),
           m.result_json
         )
-      )
-      FROM metadata m
-      WHERE m.windows_id = w.id
-    ) AS window_metadata
+      ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id 
+JOIN algorithm a ON a.id = r.algorithm_id
+JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = $1
     AND w.time_from > $2
     AND w.time_to < $3
+GROUP BY
+    r.id, r.algorithm_id, w.id, a.result_type,
+    r.result_value, r.result_array, r.result_json,
+    wt.name, wt.version, w.time_from, w.time_to, w.origin
+HAVING
+    -- No filter applied
+    (
+        $4::jsonb IS NULL
+    )
+    OR (
+        -- Every filter entry must be satisfied by some metadata row on this window
+        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
+        $4::jsonb IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements($4::jsonb) AS f
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM metadata m2
+                WHERE m2.windows_id = r.windows_id
+                  AND m2.metadata_key = f->>'key'
+                  AND (
+                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
+                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
+                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                  )
+            )
+        )
+    )
 ORDER BY w.time_from, w.time_to DESC
-LIMIT $5
-OFFSET $4
+LIMIT $6
+OFFSET $5
 `
 
 type ReadResultsForAlgorithmByTimedeltaParams struct {
-	AlgorithmID pgtype.Int8
-	SearchFrom  pgtype.Timestamp
-	SearchTo    pgtype.Timestamp
-	CountOffset int32
-	Limit       pgtype.Int4
+	AlgorithmID     pgtype.Int8
+	SearchFrom      pgtype.Timestamp
+	SearchTo        pgtype.Timestamp
+	MetadataFilters []byte
+	CountOffset     int32
+	Limit           pgtype.Int4
 }
 
 type ReadResultsForAlgorithmByTimedeltaRow struct {
@@ -932,6 +987,7 @@ func (q *Queries) ReadResultsForAlgorithmByTimedelta(ctx context.Context, arg Re
 		arg.AlgorithmID,
 		arg.SearchFrom,
 		arg.SearchTo,
+		arg.MetadataFilters,
 		arg.CountOffset,
 		arg.Limit,
 	)
@@ -998,7 +1054,7 @@ func (q *Queries) ReadWindowTypeMetadataFields(ctx context.Context) ([]WindowTyp
 }
 
 const readWindowTypes = `-- name: ReadWindowTypes :many
-SELECT wt.id, wt.name, wt.version, wt.description, wt.created, wt.filter_keys FROM window_type wt
+SELECT wt.id, wt.name, wt.version, wt.description, wt.created FROM window_type wt
 `
 
 func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
@@ -1016,7 +1072,42 @@ func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
 			&i.Version,
 			&i.Description,
 			&i.Created,
-			&i.FilterKeys,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const readWindowTypesByName = `-- name: ReadWindowTypesByName :many
+SELECT wt.id, wt.name, wt.version, wt.description, wt.created FROM window_type wt
+WHERE wt.name = $1 AND wt.version = $2
+`
+
+type ReadWindowTypesByNameParams struct {
+	Name    string
+	Version string
+}
+
+func (q *Queries) ReadWindowTypesByName(ctx context.Context, arg ReadWindowTypesByNameParams) ([]WindowType, error) {
+	rows, err := q.db.Query(ctx, readWindowTypesByName, arg.Name, arg.Version)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WindowType
+	for rows.Next() {
+		var i WindowType
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Version,
+			&i.Description,
+			&i.Created,
 		); err != nil {
 			return nil, err
 		}
@@ -1033,9 +1124,9 @@ INSERT INTO metadata (
   windows_id,
   window_type_id,
   metadata_key,
-  result_value,
-  result_array,
-  result_json
+  metadata_value,
+  metadata_array,
+  metadata_json
 ) VALUES (
   $1,
   $2,
@@ -1051,12 +1142,12 @@ SET
 `
 
 type RegisterMetadataParams struct {
-	WindowsID    int64
-	WindowTypeID int64
-	MetadataKey  string
-	ResultValue  pgtype.Float8
-	ResultArray  []float64
-	ResultJson   []byte
+	WindowsID     int64
+	WindowTypeID  int64
+	MetadataKey   string
+	MetadataValue pgtype.Float8
+	MetadataArray []float64
+	MetadataJson  []byte
 }
 
 func (q *Queries) RegisterMetadata(ctx context.Context, arg RegisterMetadataParams) error {
@@ -1064,9 +1155,9 @@ func (q *Queries) RegisterMetadata(ctx context.Context, arg RegisterMetadataPara
 		arg.WindowsID,
 		arg.WindowTypeID,
 		arg.MetadataKey,
-		arg.ResultValue,
-		arg.ResultArray,
-		arg.ResultJson,
+		arg.MetadataValue,
+		arg.MetadataArray,
+		arg.MetadataJson,
 	)
 	return err
 }

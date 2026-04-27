@@ -127,18 +127,19 @@ type AnnotationWindowType struct {
 }
 
 type Metadata struct {
-	WindowsID    int64
-	WindowTypeID int64
-	MetadataKey  string
-	ResultValue  pgtype.Float8
-	ResultArray  []float64
-	ResultJson   []byte
+	WindowsID     int64
+	WindowTypeID  int64
+	MetadataKey   string
+	MetadataValue pgtype.Float8
+	MetadataArray []float64
+	MetadataJson  []byte
 }
 
 type MetadataField struct {
 	ID          int64
 	Name        string
 	Description string
+	Filter      pgtype.Bool
 }
 
 type MetadataFieldsReference struct {
@@ -180,7 +181,6 @@ type WindowType struct {
 	Version     string
 	Description string
 	Created     pgtype.Timestamp
-	FilterKeys  []string
 }
 
 type WindowTypeMetadataField struct {
