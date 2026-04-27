@@ -21,10 +21,12 @@ RETURNING id;
 -- name: CreateMetadataField :one
 INSERT INTO metadata_fields (
   name,
-  description
+  description,
+  filter
 ) VALUES (
   sqlc.arg('name'),
-  sqlc.arg('description')
+  sqlc.arg('description'),
+  sqlc.arg('filter')
 ) ON CONFLICT (name) DO UPDATE
 SET
   name = EXCLUDED.name,
@@ -186,6 +188,10 @@ SELECT aep.* FROM algorithm_execution_paths aep WHERE aep.final_algo_id=sqlc.arg
 -- name: ReadWindowTypes :many
 SELECT wt.* FROM window_type wt;
 
+-- name: ReadWindowTypesByName :many
+SELECT wt.* FROM window_type wt
+WHERE wt.name = sqlc.arg('name') AND wt.version = sqlc.arg('version');
+
 -- name: RegisterWindow :one
 WITH window_type_id AS (
   SELECT id FROM window_type 
@@ -209,16 +215,16 @@ INSERT INTO metadata (
   windows_id,
   window_type_id,
   metadata_key,
-  result_value,
-  result_array,
-  result_json
+  metadata_value,
+  metadata_array,
+  metadata_json
 ) VALUES (
   sqlc.arg('windows_id'),
   sqlc.arg('window_type_id'),
   sqlc.arg('metadata_key'),
-  sqlc.arg('result_value'),
-  sqlc.arg('result_array'),
-  sqlc.arg('result_json')
+  sqlc.arg('metadata_value'),
+  sqlc.arg('metadata_array'),
+  sqlc.arg('metadata_json')
 ) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
 SET
   result_value = EXCLUDED.result_value,
@@ -255,14 +261,11 @@ WHERE id = ANY(sqlc.arg('processor_ids')::bigint[])
 ORDER BY name, runtime;
 
 -- name: ReadMetadataFieldsByWindowType :many
-SELECT 
-    metadata_field_id,
-    metadata_field_name,
-    metadata_field_description
-FROM window_type_metadata_fields
-WHERE window_type_name = sqlc.arg('window_type_name')
-  AND window_type_version = sqlc.arg('window_type_version')
-ORDER BY metadata_field_name;
+SELECT m.* FROM 
+metadata_fields m
+JOIN metadata_fields_references ON m.id = metadata_fields_references.metadata_fields_id
+WHERE window_type_id = sqlc.arg('window_type_id')
+ORDER BY m.name;
 
 -- name: ReadMetadataFields :many
 SELECT * FROM metadata_fields;
@@ -284,25 +287,51 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    (
-      SELECT jsonb_object_agg(m.metadata_key, 
+    jsonb_object_agg(m.metadata_key,
         COALESCE(
           to_jsonb(m.result_value),
           to_jsonb(m.result_array),
           m.result_json
         )
-      )
-      FROM metadata m
-      WHERE m.windows_id = w.id
-    ) AS window_metadata
+      ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id 
+JOIN algorithm a ON a.id = r.algorithm_id
+JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_from > sqlc.arg('search_from')
     AND w.time_to < sqlc.arg('search_to')
+GROUP BY
+    r.id, r.algorithm_id, w.id, a.result_type,
+    r.result_value, r.result_array, r.result_json,
+    wt.name, wt.version, w.time_from, w.time_to, w.origin
+HAVING
+    -- No filter applied
+    (
+        sqlc.narg('metadata_filters')::jsonb IS NULL
+    )
+    OR (
+        -- Every filter entry must be satisfied by some metadata row on this window
+        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
+        sqlc.narg('metadata_filters')::jsonb IS NOT NULL
+        AND NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(sqlc.narg('metadata_filters')::jsonb) AS f
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM metadata m2
+                WHERE m2.windows_id = r.windows_id
+                  AND m2.metadata_key = f->>'key'
+                  AND (
+                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
+                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
+                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                  )
+            )
+        )
+    )
 ORDER BY w.time_from, w.time_to DESC
 LIMIT sqlc.narg('limit')
 OFFSET sqlc.arg('count_offset');
@@ -321,24 +350,51 @@ SELECT
     w.time_from as window_time_from,
     w.time_to as window_time_to,
     w.origin as window_origin,
-    (
-      SELECT jsonb_object_agg(m.metadata_key, 
+    jsonb_object_agg(m.metadata_key, 
         COALESCE(
           to_jsonb(m.result_value),
           to_jsonb(m.result_array),
           m.result_json
         )
-      )
-      FROM metadata m
-      WHERE m.windows_id = w.id
-    ) AS window_metadata
+      ) AS window_metadata
 FROM results r
 JOIN windows w ON w.id = r.windows_id
 JOIN window_type wt ON wt.id = w.window_type_id
 JOIN algorithm a ON a.id = r.algorithm_id
+JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_to < sqlc.arg('search_to')
+GROUP BY
+    r.id, r.algorithm_id, w.id, a.result_type,
+    r.result_value, r.result_array, r.result_json,
+    wt.name, wt.version, w.time_from, w.time_to, w.origin
+HAVING
+    -- No filter applied
+    (
+        sqlc.arg('metadata_filters')::jsonb IS NULL
+    )
+    OR (
+        -- Every filter entry must be satisfied by some metadata row on this window
+        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
+        sqlc.arg('metadata_filters')::jsonb IS NOT NULL
+        AND NOT EXISTS (
+            -- Check that no filter goes unsatisfied
+            SELECT 1
+            FROM jsonb_array_elements(sqlc.arg('metadata_filters')::jsonb) AS f
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM metadata m2
+                WHERE m2.windows_id = r.windows_id
+                  AND m2.metadata_key = f->>'key'
+                  AND (
+                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
+                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
+                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                  )
+            )
+        )
+    )
 ORDER BY w.time_from, w.time_to DESC
 LIMIT sqlc.narg('limit')
 OFFSET sqlc.arg('count_offset');

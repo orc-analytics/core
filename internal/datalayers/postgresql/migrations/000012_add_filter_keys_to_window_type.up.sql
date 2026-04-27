@@ -1,1 +1,1 @@
-ALTER TABLE window_type ADD COLUMN filter_keys TEXT[];
+ALTER TABLE metadata_fields ADD COLUMN filter BOOL;

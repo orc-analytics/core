@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"reflect"
 	"strings"
 	"time"
 
@@ -27,11 +28,33 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// converts a structpb struct to a form that can be used to filter metadata
+// in the db
+func metadataStructpbToFilter(metadata map[string]*structpb.Value) ([]byte, error) {
+	filterMap := make(map[string]any, len(metadata))
+
+	for k, v := range metadata {
+		switch v.GetKind().(type) {
+		case *structpb.Value_ListValue:
+			filterMap[k] = v.GetListValue()
+		case *structpb.Value_NumberValue:
+			filterMap[k] = v.GetNumberValue()
+		case *structpb.Value_StructValue:
+			filterMap[k] = v.GetStructValue()
+		default:
+			slog.Error("unsupported type", "type", reflect.TypeOf(v.GetKind()))
+			return nil, fmt.Errorf("unsupported type")
+		}
+	}
+	return json.Marshal(filterMap)
+}
+
 func processTasks(
 	d *Datalayer,
 	executionPlan dag.Plan,
 	window *pb.Window,
 	insertedWindow RegisterWindowRow,
+	metadataFilter []byte,
 ) error {
 	ctx := context.Background()
 	slog.Info("calculated execution paths", "execution_paths", executionPlan)
@@ -186,7 +209,8 @@ func processTasks(
 								Time:  searchTo,
 								Valid: true,
 							},
-							CountOffset: int32(algoDep.Lookback.GapCount),
+							MetadataFilters: metadataFilter,
+							CountOffset:     int32(algoDep.Lookback.GapCount),
 						}
 						count := int32(algoDep.Lookback.Count)
 						if count > 0 {
@@ -302,7 +326,8 @@ func processTasks(
 									Time:  earliest_time_of_latest_result,
 									Valid: true,
 								},
-								CountOffset: int32(algoDep.Lookback.GapCount),
+								MetadataFilters: metadataFilter,
+								CountOffset:     int32(algoDep.Lookback.GapCount),
 							}
 							count := int32(algoDep.Lookback.Count)
 							if count > 0 {
@@ -425,7 +450,8 @@ func processTasks(
 								Time:  searchTo,
 								Valid: true,
 							},
-							CountOffset: int32(node.SelfLookback().GapCount),
+							MetadataFilters: metadataFilter,
+							CountOffset:     int32(node.SelfLookback().GapCount),
 						}
 						count := int32(node.SelfLookback().Count)
 						if count > 0 {
@@ -528,7 +554,8 @@ func processTasks(
 							Time:  searchTo,
 							Valid: true,
 						},
-						CountOffset: int32(node.SelfLookback().GapCount),
+						MetadataFilters: metadataFilter,
+						CountOffset:     int32(node.SelfLookback().GapCount),
 					}
 					count := int32(node.SelfLookback().Count)
 					if count > 0 {
