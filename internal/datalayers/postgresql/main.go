@@ -215,7 +215,7 @@ func (d *Datalayer) EmitWindow(
 		}
 	}
 
-	for k, v := range metadata.Fields {
+	for k, v := range metadata.GetFields() {
 		params := RegisterMetadataParams{
 			WindowsID:    insertedWindow.ID,
 			WindowTypeID: insertedWindow.WindowTypeID,

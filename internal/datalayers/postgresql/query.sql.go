@@ -781,9 +781,9 @@ SELECT
     w.origin as window_origin,
     jsonb_object_agg(m.metadata_key, 
         COALESCE(
-          to_jsonb(m.result_value),
-          to_jsonb(m.result_array),
-          m.result_json
+          to_jsonb(m.metadata_value),
+          to_jsonb(m.metadata_array),
+          m.metadata_json
         )
       ) AS window_metadata
 FROM results r
@@ -817,9 +817,9 @@ HAVING
                 WHERE m2.windows_id = r.windows_id
                   AND m2.metadata_key = f->>'key'
                   AND (
-                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
-                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
-                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
+                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
+                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
                   )
             )
         )
@@ -909,9 +909,9 @@ SELECT
     w.origin as window_origin,
     jsonb_object_agg(m.metadata_key,
         COALESCE(
-          to_jsonb(m.result_value),
-          to_jsonb(m.result_array),
-          m.result_json
+          to_jsonb(m.metadata_value),
+          to_jsonb(m.metadata_array),
+          m.metadata_json
         )
       ) AS window_metadata
 FROM results r
@@ -945,9 +945,9 @@ HAVING
                 WHERE m2.windows_id = r.windows_id
                   AND m2.metadata_key = f->>'key'
                   AND (
-                      (f->>'value' IS NOT NULL AND m2.result_value = f->>'value')
-                      OR (f->'array' IS NOT NULL AND m2.result_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array')))
-                      OR (f->'struct' IS NOT NULL AND m2.result_json @> (f->'struct'))
+                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
+                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
+                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
                   )
             )
         )
@@ -1136,9 +1136,9 @@ INSERT INTO metadata (
   $6
 ) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
 SET
-  result_value = EXCLUDED.result_value,
-  result_array = EXCLUDED.result_array,
-  result_json  = EXCLUDED.result_json
+  metadata_value = EXCLUDED.metadata_value,
+  metadata_array = EXCLUDED.metadata_array,
+  metadata_json  = EXCLUDED.metadata_json
 `
 
 type RegisterMetadataParams struct {
