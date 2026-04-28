@@ -991,7 +991,7 @@ func processTasks(
 					slog.Error("error inserting result", "error", err)
 					continue
 				}
-				slog.Info("inserted result", "resultId")
+				slog.Info("inserted result", "resultId", resultId)
 			}
 		}
 	}
