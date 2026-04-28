@@ -17,4 +17,4 @@ Full documentation can be found at [orcatelemetry.io/docs](https://orcatelemetry
 
 ## 📄 License
 
-Orca is licensed under the [GNU General Public License v3.0](./LICENSE.md).
+Orca is licensed under the [MIT](./LICENSE.md).
