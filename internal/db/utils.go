@@ -1,4 +1,4 @@
-package postgresql
+package db
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 	"github.com/orca-telemetry/core/internal/dag"
 
 	pb "github.com/orca-telemetry/contract/go"
-	"github.com/orca-telemetry/core/internal/envs"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -103,24 +102,6 @@ func setResultStateToProcessing(ctx context.Context, qtx *Queries, err error, re
 	return oldErr
 }
 
-func setResultStateToSucceeded(ctx context.Context, qtx *Queries, err error, resultId int64) error {
-	oldErr := err
-	err = qtx.UpdateResultState(ctx, UpdateResultStateParams{
-		State:    AlgorithmStateSUCCEEDED,
-		ResultID: resultId,
-	})
-
-	if err != nil {
-		slog.Error("could not update result state", "error", err)
-		if oldErr != nil {
-			return fmt.Errorf("%w & could not update result state to failed - %w", oldErr, err)
-		} else {
-			return fmt.Errorf("could not update result state to failed - %w", err)
-		}
-	}
-	return oldErr
-}
-
 // converts a structpb struct to a form that can be used to filter metadata
 // in the db
 type MetadataFilter struct {
@@ -172,7 +153,8 @@ func processTasks(
 	window *pb.Window,
 	insertedWindow RegisterWindowRow,
 	metadataFilter []byte,
-) error {
+	useTls bool,
+) (retErr error) {
 	ctx := context.Background()
 	slog.Info("calculated execution paths", "execution_paths", executionPlan)
 
@@ -214,19 +196,16 @@ func processTasks(
 		algorithmMap[algo.ID] = algo
 	}
 
-	// get the environment
-	config := envs.GetConfig()
-
 	// go through the executionPlan and preallocate all the results in the Db
-	tx, err := d.WithTx(ctx)
-	defer tx.Rollback(ctx)
+	tx, err := d.conn.Begin(ctx)
+	defer rollbackTransaction(tx, &retErr)
+
 	if err != nil {
 		slog.Error("could not start a transaction", "error", err)
 		return err
 	}
 
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 	algoIdResultMap := make(map[int64]int64, executionPlan.NumAffectedAlgos)
 
 	for _, stage := range executionPlan.Stages {
@@ -269,7 +248,7 @@ func processTasks(
 			}
 			var conn *grpc.ClientConn
 
-			if config.IsProduction {
+			if useTls {
 				host, _, err := net.SplitHostPort(proc.ConnectionString)
 				if err != nil {
 					host = proc.ConnectionString

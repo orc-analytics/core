@@ -1,4 +1,4 @@
-package datalayers
+package main
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	pb "github.com/orca-telemetry/contract/go"
-	types "github.com/orca-telemetry/core/internal/types"
+	"github.com/orca-telemetry/core/internal/db"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -85,8 +85,7 @@ func TestAddProcessor(t *testing.T) {
 	processorConnStr_1 := mockListener_1.Addr().String()
 	processorConnStr_2 := mockListener_2.Addr().String()
 
-	// TODO: paramaterise if we have more datalayers (e.g. MySQL, SQLite) - high level function should be the same between them
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset"}
@@ -157,7 +156,7 @@ func TestAddProcessor(t *testing.T) {
 			},
 		},
 	}
-	emitStatus, err := dlyr.EmitWindow(testCtx, &window)
+	emitStatus, err := dlyr.EmitWindow(testCtx, &window, false)
 	assert.Equal(t, emitStatus.GetStatus(), pb.WindowEmitStatus_PROCESSING_TRIGGERED)
 }
 
@@ -182,8 +181,7 @@ func TestLookbackDependenciesBetweenAlgorithms(t *testing.T) {
 	processorConnStr_1 := mockListener_1.Addr().String()
 	processorConnStr_2 := mockListener_2.Addr().String()
 
-	// TODO: paramaterise if we have more datalayers (e.g. MySQL, SQLite) - high level function should be the same between them
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset", Filter: true}
@@ -267,7 +265,7 @@ func TestLookbackDependenciesBetweenAlgorithms(t *testing.T) {
 				},
 			},
 		}
-		emitStatus, err := dlyr.EmitWindow(testCtx, &window)
+		emitStatus, err := dlyr.EmitWindow(testCtx, &window, false)
 		assert.NoError(t, err)
 		assert.Equal(t, emitStatus.GetStatus(), pb.WindowEmitStatus_PROCESSING_TRIGGERED)
 	}
@@ -289,8 +287,7 @@ func TestMetadataFieldsChangeable(t *testing.T) {
 	// get the actual address the mock server is listening on
 	processorConnStr := mockListener.Addr().String()
 
-	// TODO: paramaterise if we have more datalayers (e.g. MySQL, SQLite) - high level function should be the same between them
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset"}
@@ -387,7 +384,7 @@ func TestMetadataFieldsChangeable(t *testing.T) {
 			},
 		},
 	}
-	emitStatus, err := dlyr.EmitWindow(testCtx, &window)
+	emitStatus, err := dlyr.EmitWindow(testCtx, &window, false)
 	assert.NoError(t, err)
 	assert.Equal(t, pb.WindowEmitStatus_PROCESSING_TRIGGERED, emitStatus.GetStatus())
 
@@ -413,7 +410,7 @@ func TestMetadataFieldsChangeable(t *testing.T) {
 		},
 	}
 	// 5. Confirm that the window could not be emitted becuase it is missing the field ID
-	emitStatus, err = dlyr.EmitWindow(testCtx, &window)
+	emitStatus, err = dlyr.EmitWindow(testCtx, &window, false)
 	assert.Error(t, err)
 	assert.Equal(t, pb.WindowEmitStatus_TRIGGERING_FAILED, emitStatus.GetStatus())
 
@@ -440,7 +437,7 @@ func TestMetadataFieldsChangeable(t *testing.T) {
 	}
 
 	// 7. Confirm that this window is totally different and so not bound by the old metadata fields
-	emitStatus, err = dlyr.EmitWindow(testCtx, &window)
+	emitStatus, err = dlyr.EmitWindow(testCtx, &window, false)
 	assert.NoError(t, err)
 	assert.Equal(t, pb.WindowEmitStatus_PROCESSING_TRIGGERED, emitStatus.GetStatus())
 }
@@ -461,8 +458,7 @@ func TestWindowTypeDefintion(t *testing.T) {
 	// get the actual address the mock server is listening on
 	processorConnStr := mockListener.Addr().String()
 
-	// TODO: paramaterise if we have more datalayers (e.g. MySQL, SQLite) - high level function should be the same between them
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	asset_id := pb.MetadataField{Name: "asset_id", Description: "Unique ID of the asset"}
@@ -510,7 +506,7 @@ func TestWindowTypeDefintion(t *testing.T) {
 }
 
 func TestCircularDependency(t *testing.T) {
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	windowType := pb.WindowType{
@@ -568,7 +564,7 @@ func TestCircularDependency(t *testing.T) {
 
 	err = dlyr.RegisterProcessor(testCtx, &proc)
 
-	var circularError *types.CircularDependencyError
+	var circularError *db.CircularDependencyError
 	assert.ErrorAs(t, err, &circularError)
 
 	assert.Equal(t, algo1.GetName(), circularError.FromAlgoName)
@@ -580,7 +576,7 @@ func TestCircularDependency(t *testing.T) {
 }
 
 func TestValidDependenciesBetweenProcessors(t *testing.T) {
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	windowType := pb.WindowType{
@@ -671,13 +667,13 @@ func TestValidDependenciesBetweenProcessors(t *testing.T) {
 		WindowTypeVersion: windowType.GetVersion(),
 		Origin:            "Test",
 	}
-	emitStatus, err := dlyr.EmitWindow(testCtx, window)
+	emitStatus, err := dlyr.EmitWindow(testCtx, window, false)
 	assert.NoError(t, err)
 	assert.Equal(t, emitStatus.GetStatus(), pb.WindowEmitStatus_PROCESSING_TRIGGERED)
 }
 
 func TestAlgosSameNamesDifferentProcessors(t *testing.T) {
-	dlyr, err := NewDatalayerClient(testCtx, "postgresql", testConnStr)
+	dlyr, err := db.NewClient(testCtx, testConnStr)
 	assert.NoError(t, err)
 
 	windowType := pb.WindowType{

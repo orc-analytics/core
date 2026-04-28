@@ -1,7 +1,7 @@
 // Bridge package that implements useful mocking functionality for
 // Orca processors
 
-package datalayers
+package main
 
 import (
 	"context"
@@ -27,7 +27,7 @@ func (s *mockOrcaProcessorServer) ExecuteDagPart(req *pb.ExecutionRequest, strea
 	slog.Debug("Received ExecuteDagPart request", "exec_id", req.GetExecId())
 
 	// simulate processing each algorithm in the request
-	for i, execution := range req.GetAlgorithmExecutions() {
+	for _, execution := range req.GetAlgorithmExecutions() {
 
 		// create a mock result for this algorithm
 		result := &pb.ExecutionResult{
@@ -49,7 +49,6 @@ func (s *mockOrcaProcessorServer) ExecuteDagPart(req *pb.ExecutionRequest, strea
 			return status.Errorf(codes.Internal, "failed to send result: %v", err)
 		}
 
-		slog.Debug("sent result for algorithm", "result_num", i+1, "algorithm_num", len(req.GetAlgorithms()), "algorithm_name", execution.GetAlgorithm().GetName())
 	}
 
 	slog.Debug("completed ExecuteDagPart", "exec_id", req.GetExecId())

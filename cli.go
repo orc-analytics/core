@@ -10,8 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	dlyrs "github.com/orca-telemetry/core/internal/datalayers"
-	envs "github.com/orca-telemetry/core/internal/envs"
+	"github.com/orca-telemetry/core/internal"
 )
 
 type cliFlags struct {
@@ -138,7 +137,7 @@ func validateFlags(flags cliFlags) error {
 	return nil
 }
 
-func validateConfig(config *envs.Config) error {
+func validateConfig(config *internal.Config) error {
 	if config.Platform == "" {
 		return fmt.Errorf("platform cannot be determined from connection string")
 	}
@@ -175,8 +174,8 @@ func runCLI(flags cliFlags) {
 		return
 	}
 
-	// get singleton  configuration
-	config := envs.GetConfig()
+	// get singleton configuration
+	config := internal.GetConfig()
 
 	// validate configuration
 	if err := validateConfig(config); err != nil {
@@ -201,7 +200,7 @@ func runCLI(flags cliFlags) {
 	slog.Info("premigration")
 	if flags.migrate {
 		slog.Info("migrating datalayer", "platform", config.Platform)
-		err := dlyrs.MigrateDatalayer(config.Platform, config.ConnectionString)
+		err := MigrateDatalayer(config.Platform, config.ConnectionString)
 		if err != nil {
 			slog.Error("could not migrate the datalayer, exiting", "error", err)
 			os.Exit(1)
