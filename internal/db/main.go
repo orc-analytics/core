@@ -1,4 +1,4 @@
-package postgresql
+package db
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -16,20 +17,26 @@ import (
 	"github.com/orca-telemetry/core/internal/dag"
 )
 
+func rollbackTransaction(tx pgx.Tx, err *error) {
+	if p := recover(); p != nil {
+		tx.Rollback(context.Background())
+		*err = fmt.Errorf("panic: %v", p)
+		return
+	}
+	if err != nil && *err != nil {
+		tx.Rollback(context.Background())
+	}
+}
+
 // RegisterProcessor with Orca Core
 func (d *Datalayer) RegisterProcessor(
 	ctx context.Context,
 	proc *pb.ProcessorRegistration,
-) (txErr error) {
+) (retErr error) {
 	slog.Debug("registering processor", "processor", proc)
 
-	tx, err := d.WithTx(ctx)
-
-	defer func() {
-		if txErr != nil {
-			tx.Rollback(ctx)
-		}
-	}()
+	tx, err := d.conn.Begin(ctx)
+	defer rollbackTransaction(tx, &retErr)
 
 	if err != nil {
 		slog.Error("could not start a transaction", "error", err)
@@ -130,29 +137,19 @@ func (d *Datalayer) RegisterProcessor(
 func (d *Datalayer) EmitWindow(
 	ctx context.Context,
 	window *pb.Window,
+	useTls bool,
 ) (_ pb.WindowEmitStatus, retErr error) {
 	slog.Debug("recieved emitted window", "window", window)
 
-	tx, err := d.WithTx(ctx)
-
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback(ctx)
-			return
-		}
-
-		if retErr != nil {
-			tx.Rollback(ctx)
-		}
-	}()
+	tx, err := d.conn.Begin(ctx)
+	defer rollbackTransaction(tx, &retErr)
 
 	if err != nil {
 		slog.Error("could not start a transaction", "error", err)
 		return pb.WindowEmitStatus{}, err
 	}
 
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 
 	metadata := window.GetMetadata()
 
@@ -367,7 +364,7 @@ func (d *Datalayer) EmitWindow(
 		}
 
 		go func() {
-			err := processTasks(d, executionPlan, window, insertedWindow, metadataFilterBytes)
+			err := processTasks(d, executionPlan, window, insertedWindow, metadataFilterBytes, useTls)
 			if err != nil {
 				err = setWindowStateToFailed(ctx, d.queries, err, insertedWindow.ID)
 				slog.Error("issue processing tasks", "error", err)
@@ -388,25 +385,18 @@ func (d *Datalayer) EmitWindow(
 func (d *Datalayer) Expose(
 	ctx context.Context,
 	settings *pb.ExposeSettings,
-) (*pb.InternalState, error) {
+) (_ *pb.InternalState, retErr error) {
 	// settings not handled for now
 
-	tx, err := d.WithTx(ctx)
-
-	defer func() {
-		if tx != nil {
-			tx.Rollback(ctx)
-		}
-	}()
+	tx, err := d.conn.Begin(ctx)
+	defer rollbackTransaction(tx, &retErr)
 
 	if err != nil {
 		slog.Error("could not start a transaction", "error", err)
 		return nil, err
 	}
 
-	pgTx := tx.(*PgTx)
-
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 	var processors []Processor
 	if len(settings.ExcludeProject) > 0 {
 		processors, err = qtx.ReadProcessorExcludeProject(ctx, pgtype.Text{

@@ -3,7 +3,7 @@
 //   sqlc v1.30.0
 // source: query.sql
 
-package postgresql
+package db
 
 import (
 	"context"

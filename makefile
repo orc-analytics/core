@@ -21,8 +21,8 @@ BINARY_NAME = orca
 export CGO_ENABLED = 0
 
 .datalayer:
-	sqlc vet -f internal/datalayers/postgresql/sqlc.yaml
-	sqlc generate -f internal/datalayers/postgresql/sqlc.yaml
+	sqlc vet -f sqlc.yaml
+	sqlc generate -f sqlc.yaml
 
 .stop_datalayer:
 	cd local_storage && docker-compose stop
@@ -59,7 +59,7 @@ export CGO_ENABLED = 0
 	sudo chmod 640 local_storage/_ca/server.key
 
 .test_all:
-	go test ./internal/... -v
+	go test ./... -v
 
 # ------------- BUILD -------------
 

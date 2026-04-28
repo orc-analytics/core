@@ -1,26 +1,7 @@
-package datalayers
+package db
 
 import (
-	"context"
 	"fmt"
-
-	pb "github.com/orca-telemetry/contract/go"
-)
-
-// the interface that all datalayers must implement to be compatible with Orca
-type (
-	Tx interface {
-		Rollback(ctx context.Context)
-		Commit(ctx context.Context) error
-	}
-	Datalayer interface {
-		WithTx(ctx context.Context) (Tx, error)
-
-		// Core level operations
-		RegisterProcessor(ctx context.Context, proc *pb.ProcessorRegistration) error
-		EmitWindow(ctx context.Context, window *pb.Window) (pb.WindowEmitStatus, error)
-		Expose(ctx context.Context, settings *pb.ExposeSettings) (*pb.InternalState, error)
-	}
 )
 
 // custom errors

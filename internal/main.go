@@ -6,15 +6,14 @@ import (
 
 	"buf.build/go/protovalidate"
 	pb "github.com/orca-telemetry/contract/go"
-	dlyr "github.com/orca-telemetry/core/internal/datalayers"
-	types "github.com/orca-telemetry/core/internal/types"
+	"github.com/orca-telemetry/core/internal/db"
 	"google.golang.org/protobuf/proto"
 )
 
 type (
 	OrcaCoreServer struct {
 		pb.UnimplementedOrcaCoreServer
-		client types.Datalayer
+		client *db.Datalayer
 	}
 )
 
@@ -25,15 +24,12 @@ var (
 // NewServer produces a new ORCA gRPC server
 func NewServer(
 	ctx context.Context,
-	platform dlyr.Platform,
 	connStr string,
 ) (*OrcaCoreServer, error) {
-	client, err := dlyr.NewDatalayerClient(ctx, platform, connStr)
+	client, err := db.NewClient(ctx, connStr)
 	if err != nil {
 		slog.Error(
-			"Could not initialise new platform client whilst initialising server",
-			"platform",
-			platform,
+			"could not initialise client",
 			"error",
 			err,
 		)
@@ -94,7 +90,8 @@ func (o *OrcaCoreServer) EmitWindow(
 		return nil, err
 	}
 	slog.Info("emitting window", "window", window)
-	windowEmitStatus, err := o.client.EmitWindow(ctx, window)
+	config := GetConfig()
+	windowEmitStatus, err := o.client.EmitWindow(ctx, window, config.IsProduction)
 	return &windowEmitStatus, err
 }
 

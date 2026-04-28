@@ -12,7 +12,6 @@ import (
 
 	pb "github.com/orca-telemetry/contract/go"
 	orca "github.com/orca-telemetry/core/internal"
-	dlyr "github.com/orca-telemetry/core/internal/datalayers"
 )
 
 func startGRPCServer(
@@ -21,7 +20,7 @@ func startGRPCServer(
 	port int,
 	_ string,
 ) {
-	orcaServer, err := orca.NewServer(context.Background(), dlyr.Platform(platform), dbConnString)
+	orcaServer, err := orca.NewServer(context.Background(), dbConnString)
 	if err != nil {
 		slog.Error("issue launching Orca Server", "error", err)
 		os.Exit(1)

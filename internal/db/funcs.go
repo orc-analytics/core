@@ -1,4 +1,4 @@
-package postgresql
+package db
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	pb "github.com/orca-telemetry/contract/go"
-	types "github.com/orca-telemetry/core/internal/types"
 )
 
 type Datalayer struct {
@@ -53,23 +52,13 @@ func NewClient(ctx context.Context, connStr string) (*Datalayer, error) {
 	}, nil
 }
 
-func (d *Datalayer) WithTx(ctx context.Context) (types.Tx, error) {
-	tx, err := d.conn.Begin(ctx)
-	if err != nil {
-		slog.Error("could not start transaction", "error", err)
-		return nil, err
-	}
-	return &PgTx{tx: tx}, nil
-}
-
 func (d *Datalayer) createProcessor(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	proc *pb.ProcessorRegistration,
 ) error {
-	pgTx := tx.(*PgTx)
 
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 
 	err := qtx.CreateProcessor(ctx, CreateProcessorParams{
 		Name:             proc.GetName(),
@@ -86,11 +75,10 @@ func (d *Datalayer) createProcessor(
 
 func (d *Datalayer) createMetadataField(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	metadataField *pb.MetadataField,
 ) (int64, error) {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 	metadataFieldId, err := qtx.CreateMetadataField(ctx, CreateMetadataFieldParams{
 		Name:        metadataField.GetName(),
 		Description: metadataField.GetDescription(),
@@ -108,11 +96,10 @@ func (d *Datalayer) createMetadataField(
 
 func (d *Datalayer) readMetadataFieldsByWindowType(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	windowTypeId int64,
 ) ([]*pb.MetadataField, error) {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 
 	metadataFields, err := qtx.ReadMetadataFieldsByWindowType(ctx, windowTypeId)
 
@@ -133,11 +120,10 @@ func (d *Datalayer) readMetadataFieldsByWindowType(
 
 func (d *Datalayer) createWindowType(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	windowType *pb.WindowType,
 ) (int64, error) {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 	windowTypeId, err := qtx.CreateWindowType(ctx, CreateWindowTypeParams{
 		Name:        windowType.GetName(),
 		Version:     windowType.GetVersion(),
@@ -152,12 +138,11 @@ func (d *Datalayer) createWindowType(
 
 func (d *Datalayer) createMetadataFieldBridge(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	windowTypeId int64,
 	metadataFieldId int64,
 ) error {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 	err := qtx.CreateWindowTypeMetadataFieldBridge(ctx, CreateWindowTypeMetadataFieldBridgeParams{
 		WindowTypeID:     windowTypeId,
 		MetadataFieldsID: metadataFieldId,
@@ -171,12 +156,11 @@ func (d *Datalayer) createMetadataFieldBridge(
 
 func (d *Datalayer) addAlgorithm(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	algo *pb.Algorithm,
 	proc *pb.ProcessorRegistration,
 ) error {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
 
 	// create algos
 	var resultType ResultType
@@ -218,12 +202,12 @@ func (d *Datalayer) addAlgorithm(
 
 func (d *Datalayer) addOverwriteAlgorithmDependency(
 	ctx context.Context,
-	tx types.Tx,
+	tx pgx.Tx,
 	algo *pb.Algorithm,
 	proc *pb.ProcessorRegistration,
 ) error {
-	pgTx := tx.(*PgTx)
-	qtx := d.queries.WithTx(pgTx.tx)
+	qtx := d.queries.WithTx(tx)
+
 	// get algorithm id
 	algoId, err := qtx.ReadAlgorithmId(ctx, ReadAlgorithmIdParams{
 		AlgorithmName:    algo.GetName(),
@@ -264,7 +248,7 @@ func (d *Datalayer) addOverwriteAlgorithmDependency(
 					"to_algo",
 					algo,
 				)
-				return &types.CircularDependencyError{
+				return &CircularDependencyError{
 					FromAlgoName:      algoDependentOn.GetName(),
 					FromAlgoVersion:   algoDependentOn.GetVersion(),
 					FromAlgoProcessor: algoDependentOn.GetProcessorName(),
