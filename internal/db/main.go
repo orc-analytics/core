@@ -19,11 +19,13 @@ import (
 
 func rollbackTransaction(tx pgx.Tx, err *error) {
 	if p := recover(); p != nil {
-		tx.Rollback(context.Background())
+		if tx != nil {
+			tx.Rollback(context.Background())
+		}
 		*err = fmt.Errorf("panic: %v", p)
 		return
 	}
-	if err != nil && *err != nil {
+	if tx != nil && err != nil && *err != nil {
 		tx.Rollback(context.Background())
 	}
 }
