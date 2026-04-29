@@ -862,7 +862,7 @@ func processTasks(
 						break
 					}
 					if err == io.EOF {
-						slog.Info("finished receiving execution results", "proc_id", task.ProcId)
+						slog.Info("finished recieving execution results", "proc_id", task.ProcId)
 						break
 					}
 					slog.Error(

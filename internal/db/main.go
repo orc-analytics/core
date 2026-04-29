@@ -366,6 +366,7 @@ func (d *Datalayer) EmitWindow(
 		}
 
 		go func() {
+			ctx := context.Background()
 			err := processTasks(d, executionPlan, window, insertedWindow, metadataFilterBytes, useTls)
 			if err != nil {
 				err = setWindowStateToFailed(ctx, d.queries, err, insertedWindow.ID)

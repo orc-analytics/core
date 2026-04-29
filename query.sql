@@ -311,6 +311,7 @@ WHERE
     r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_from > sqlc.arg('search_from')
     AND w.time_to < sqlc.arg('search_to')
+    AND r.state = 'SUCCEEDED'
 GROUP BY
     r.id, r.algorithm_id, w.id, a.result_type,
     r.result_value, r.result_array, r.result_json,
@@ -373,6 +374,7 @@ JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = sqlc.arg('algorithm_id')
     AND w.time_to < sqlc.arg('search_to')
+    AND r.state = 'SUCCEEDED'
 GROUP BY
     r.id, r.algorithm_id, w.id, a.result_type,
     r.result_value, r.result_array, r.result_json,
