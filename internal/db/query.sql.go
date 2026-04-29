@@ -808,6 +808,7 @@ JOIN metadata m ON m.windows_id = r.windows_id
 WHERE
     r.algorithm_id = $1
     AND w.time_to < $2
+    AND r.state = 'SUCCEEDED'
 GROUP BY
     r.id, r.algorithm_id, w.id, a.result_type,
     r.result_value, r.result_array, r.result_json,
@@ -937,6 +938,7 @@ WHERE
     r.algorithm_id = $1
     AND w.time_from > $2
     AND w.time_to < $3
+    AND r.state = 'SUCCEEDED'
 GROUP BY
     r.id, r.algorithm_id, w.id, a.result_type,
     r.result_value, r.result_array, r.result_json,
