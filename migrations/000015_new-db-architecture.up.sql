@@ -59,7 +59,7 @@ CREATE TYPE datafunction_storage_type AS ENUM (
 
 CREATE TYPE failure_source AS ENUM (
     'FAILURE_SOURCE_WORKER',
-    'FAILURE_SOURCE_CORE',
+    'FAILURE_SOURCE_CORE'
 );
 
 CREATE TYPE failure_category AS ENUM (
@@ -248,28 +248,28 @@ CREATE TABLE workflow_trigger (
     created_at timestamptz NOT NULL DEFAULT NOW(),
     source trigger_source NOT NULL DEFAULT 'TRIGGER_SOURCE_UNSPECIFIED',
     status trigger_status NOT NULL DEFAULT 'TRIGGER_STATUS_UNSPECIFIED',
-    execution_parameters jsonb,
+    execution_parameters jsonb
 );
 
 CREATE TABLE datafunction_storage_backend (
     id serial PRIMARY KEY,
     base_uri string NOT NULL DEFAULT '',
-    storage_type datafunction_storage_backends NOT NULL DEFAULT 'DATAFUNCTION_STORAGE_FILESYSTEM',
+    storage_type datafunction_storage_backends NOT NULL DEFAULT 'DATAFUNCTION_STORAGE_FILESYSTEM'
 );
 
 CREATE TABLE datafunction_execution (
     id serial PRIMARY KEY,
-    workflow_run_id NOT NULL REFERENCES workflow_runs (id),
+    workflow_run_id integer NOT NULL REFERENCES workflow_run (id),
     uri string NOT NULL,
     status execution_status NOT NULL DEFAULT EXECUTION_STATUS_UNSPECIFIED,
     completed boolean NOT NULL DEFAULT FALSE,
     requested_at timestamptz NOT NULL DEFAULT NOW(),
-    finished_at timestamptz,
+    finished_at timestamptz
 );
 
 CREATE TABLE task_execution (
     id serial PRIMARY KEY,
-    workflow_runId NOT NULL REFERENCES workflow_runs (id),
+    workflow_runId integer NOT NULL REFERENCES workflow_run (id),
     task_name string NOT NULL REFERENCES task (name),
     task_ast_hash string NOT NULL REFERENCES task (ast_hash),
     task_worker_name string NOT NULL REFERENCES task (worker_name),
@@ -282,6 +282,6 @@ CREATE TABLE task_execution (
     failure_category failure_category,
     cpu_seconds integer,
     memory_gib_seconds integer,
-    execution_duration_seconds integer,
+    execution_duration_seconds integer
 );
 

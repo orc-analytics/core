@@ -98,6 +98,49 @@ func (ns NullBackoffStrategy) Value() (driver.Value, error) {
 	return string(ns.BackoffStrategy), nil
 }
 
+type DatafunctionStorageType string
+
+const (
+	DatafunctionStorageTypeDATAFUNCTIONSTORAGEFILESYSTEM DatafunctionStorageType = "DATAFUNCTION_STORAGE_FILESYSTEM"
+	DatafunctionStorageTypeDATAFUNCTIONSTORAGEGCS        DatafunctionStorageType = "DATAFUNCTION_STORAGE_GCS"
+	DatafunctionStorageTypeDATAFUNCTIONSTORAGES3         DatafunctionStorageType = "DATAFUNCTION_STORAGE_S3"
+)
+
+func (e *DatafunctionStorageType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = DatafunctionStorageType(s)
+	case string:
+		*e = DatafunctionStorageType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for DatafunctionStorageType: %T", src)
+	}
+	return nil
+}
+
+type NullDatafunctionStorageType struct {
+	DatafunctionStorageType DatafunctionStorageType
+	Valid                   bool // Valid is true if DatafunctionStorageType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullDatafunctionStorageType) Scan(value interface{}) error {
+	if value == nil {
+		ns.DatafunctionStorageType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.DatafunctionStorageType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullDatafunctionStorageType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.DatafunctionStorageType), nil
+}
+
 type ExecutionStatus string
 
 const (
@@ -139,6 +182,91 @@ func (ns NullExecutionStatus) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.ExecutionStatus), nil
+}
+
+type FailureCategory string
+
+const (
+	FailureCategoryFAILURECATEGORYHANDLED      FailureCategory = "FAILURE_CATEGORY_HANDLED"
+	FailureCategoryFAILURECATEGORYUNHANDLED    FailureCategory = "FAILURE_CATEGORY_UNHANDLED"
+	FailureCategoryFAILURECATEGORYCOULDNTREACH FailureCategory = "FAILURE_CATEGORY_COULDNT_REACH"
+)
+
+func (e *FailureCategory) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FailureCategory(s)
+	case string:
+		*e = FailureCategory(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FailureCategory: %T", src)
+	}
+	return nil
+}
+
+type NullFailureCategory struct {
+	FailureCategory FailureCategory
+	Valid           bool // Valid is true if FailureCategory is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFailureCategory) Scan(value interface{}) error {
+	if value == nil {
+		ns.FailureCategory, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FailureCategory.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFailureCategory) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FailureCategory), nil
+}
+
+type FailureSource string
+
+const (
+	FailureSourceFAILURESOURCEWORKER FailureSource = "FAILURE_SOURCE_WORKER"
+	FailureSourceFAILURESOURCECORE   FailureSource = "FAILURE_SOURCE_CORE"
+)
+
+func (e *FailureSource) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FailureSource(s)
+	case string:
+		*e = FailureSource(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FailureSource: %T", src)
+	}
+	return nil
+}
+
+type NullFailureSource struct {
+	FailureSource FailureSource
+	Valid         bool // Valid is true if FailureSource is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFailureSource) Scan(value interface{}) error {
+	if value == nil {
+		ns.FailureSource, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FailureSource.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFailureSource) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FailureSource), nil
 }
 
 type RegistrationStatus string
@@ -277,6 +405,8 @@ type TriggerStatus string
 
 const (
 	TriggerStatusTRIGGERSTATUSUNSPECIFIED TriggerStatus = "TRIGGER_STATUS_UNSPECIFIED"
+	TriggerStatusTRIGGERSTATUSNOTARGETS   TriggerStatus = "TRIGGER_STATUS_NO_TARGETS"
+	TriggerStatusTRIGGERSTATUSPENDING     TriggerStatus = "TRIGGER_STATUS_PENDING"
 	TriggerStatusTRIGGERSTATUSACCEPTED    TriggerStatus = "TRIGGER_STATUS_ACCEPTED"
 	TriggerStatusTRIGGERSTATUSREJECTED    TriggerStatus = "TRIGGER_STATUS_REJECTED"
 )
@@ -360,6 +490,48 @@ func (ns NullWindowState) Value() (driver.Value, error) {
 	return string(ns.WindowState), nil
 }
 
+type WorkflowSource string
+
+const (
+	WorkflowSourceWORKFLOWSOURCEWORKER    WorkflowSource = "WORKFLOW_SOURCE_WORKER"
+	WorkflowSourceWORKFLOWSOURCEUNDEFINED WorkflowSource = "WORKFLOW_SOURCE_UNDEFINED"
+)
+
+func (e *WorkflowSource) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = WorkflowSource(s)
+	case string:
+		*e = WorkflowSource(s)
+	default:
+		return fmt.Errorf("unsupported scan type for WorkflowSource: %T", src)
+	}
+	return nil
+}
+
+type NullWorkflowSource struct {
+	WorkflowSource WorkflowSource
+	Valid          bool // Valid is true if WorkflowSource is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullWorkflowSource) Scan(value interface{}) error {
+	if value == nil {
+		ns.WorkflowSource, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.WorkflowSource.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullWorkflowSource) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.WorkflowSource), nil
+}
+
 type Algorithm struct {
 	ID                       int64
 	Name                     string
@@ -437,11 +609,27 @@ type DataFunction struct {
 	GitCommitHash           string
 	WorkerName              string
 	OutputModel             []byte
-	IsServed                pgtype.Bool
+	IsActive                pgtype.Bool
 	InputModel              []byte
 	ExecutionTimeoutSeconds pgtype.Int4
 	TtlSeconds              pgtype.Int4
 	RegisteredAt            pgtype.Timestamptz
+}
+
+type DatafunctionExecution struct {
+	ID            int32
+	WorkflowRunID int32
+	Uri           string
+	Status        ExecutionStatus
+	Completed     bool
+	RequestedAt   pgtype.Timestamptz
+	FinishedAt    pgtype.Timestamptz
+}
+
+type DatafunctionStorageBackend struct {
+	ID          int32
+	BaseUri     string
+	StorageType interface{}
 }
 
 type Metadata struct {
@@ -498,8 +686,26 @@ type Task struct {
 	InputModel       []byte
 	OutputModel      []byte
 	GitCommitHash    string
-	IsServed         pgtype.Bool
+	IsActive         pgtype.Bool
 	RegisteredAt     pgtype.Timestamptz
+}
+
+type TaskExecution struct {
+	ID                       int32
+	WorkflowRunid            int32
+	TaskName                 string
+	TaskAstHash              string
+	TaskWorkerName           string
+	RequestedAt              pgtype.Timestamptz
+	Result                   []byte
+	Failed                   pgtype.Bool
+	CompletedAt              pgtype.Timestamptz
+	ResultRecievedAt         pgtype.Timestamptz
+	FailureSource            NullFailureSource
+	FailureCategory          NullFailureCategory
+	CpuSeconds               pgtype.Int4
+	MemoryGibSeconds         pgtype.Int4
+	ExecutionDurationSeconds pgtype.Int4
 }
 
 type TaskRequiredDataFunction struct {
@@ -541,25 +747,26 @@ type Worker struct {
 	Name          string
 	Md5Hash       string
 	ConnectionUrl string
+	IsServing     pgtype.Bool
 }
 
 type Workflow struct {
+	ID                   int32
 	Name                 string
 	Hash                 string
 	WorkerName           string
+	Source               WorkflowSource
 	Description          pgtype.Text
 	InputModel           []byte
 	TaskConcurrencyLimit pgtype.Int4
 	HaltOnFailure        pgtype.Bool
 	GitCommitHash        string
-	IsServed             pgtype.Bool
+	IsActive             pgtype.Bool
 	RegisteredAt         pgtype.Timestamptz
 }
 
 type WorkflowEdge struct {
-	WorkflowName       string
-	WorkflowHash       string
-	WorkflowWorkerName string
+	WorkflowID         int32
 	FromTaskName       string
 	FromTaskAstHash    string
 	FromTaskWorkerName string
@@ -569,13 +776,20 @@ type WorkflowEdge struct {
 }
 
 type WorkflowTransistivePair struct {
-	WorkflowName       string
-	WorkflowHash       string
-	WorkflowWorkerName string
+	WorkflowID         int32
 	FromTaskName       string
 	FromTaskAstHash    string
 	FromTaskWorkerName string
 	ToTaskName         string
 	ToTaskAstHash      string
 	ToTaskWorkerName   string
+}
+
+type WorkflowTrigger struct {
+	ID                  int32
+	WorkflowID          int32
+	CreatedAt           pgtype.Timestamptz
+	Source              TriggerSource
+	Status              TriggerStatus
+	ExecutionParameters []byte
 }
