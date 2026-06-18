@@ -56,6 +56,134 @@ func (ns NullAlgorithmState) Value() (driver.Value, error) {
 	return string(ns.AlgorithmState), nil
 }
 
+type BackoffStrategy string
+
+const (
+	BackoffStrategyBACKOFFSTRATEGYLINEAR      BackoffStrategy = "BACKOFF_STRATEGY_LINEAR"
+	BackoffStrategyBACKOFFSTRATEGYEXPONENTIAL BackoffStrategy = "BACKOFF_STRATEGY_EXPONENTIAL"
+)
+
+func (e *BackoffStrategy) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = BackoffStrategy(s)
+	case string:
+		*e = BackoffStrategy(s)
+	default:
+		return fmt.Errorf("unsupported scan type for BackoffStrategy: %T", src)
+	}
+	return nil
+}
+
+type NullBackoffStrategy struct {
+	BackoffStrategy BackoffStrategy
+	Valid           bool // Valid is true if BackoffStrategy is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullBackoffStrategy) Scan(value interface{}) error {
+	if value == nil {
+		ns.BackoffStrategy, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.BackoffStrategy.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullBackoffStrategy) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.BackoffStrategy), nil
+}
+
+type ExecutionStatus string
+
+const (
+	ExecutionStatusEXECUTIONSTATUSUNSPECIFIED ExecutionStatus = "EXECUTION_STATUS_UNSPECIFIED"
+	ExecutionStatusEXECUTIONSTATUSSUCCESSFUL  ExecutionStatus = "EXECUTION_STATUS_SUCCESSFUL"
+	ExecutionStatusEXECUTIONSTATUSFAILED      ExecutionStatus = "EXECUTION_STATUS_FAILED"
+)
+
+func (e *ExecutionStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ExecutionStatus(s)
+	case string:
+		*e = ExecutionStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ExecutionStatus: %T", src)
+	}
+	return nil
+}
+
+type NullExecutionStatus struct {
+	ExecutionStatus ExecutionStatus
+	Valid           bool // Valid is true if ExecutionStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullExecutionStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ExecutionStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ExecutionStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullExecutionStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ExecutionStatus), nil
+}
+
+type RegistrationStatus string
+
+const (
+	RegistrationStatusREGISTRATIONSTATUSUNSPECIFIED RegistrationStatus = "REGISTRATION_STATUS_UNSPECIFIED"
+	RegistrationStatusREGISTRATIONSTATUSSUCCESSFUL  RegistrationStatus = "REGISTRATION_STATUS_SUCCESSFUL"
+	RegistrationStatusREGISTRATIONSTATUSFAILED      RegistrationStatus = "REGISTRATION_STATUS_FAILED"
+)
+
+func (e *RegistrationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = RegistrationStatus(s)
+	case string:
+		*e = RegistrationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for RegistrationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullRegistrationStatus struct {
+	RegistrationStatus RegistrationStatus
+	Valid              bool // Valid is true if RegistrationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullRegistrationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.RegistrationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.RegistrationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullRegistrationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.RegistrationStatus), nil
+}
+
 type ResultType string
 
 const (
@@ -98,6 +226,94 @@ func (ns NullResultType) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.ResultType), nil
+}
+
+type TriggerSource string
+
+const (
+	TriggerSourceTRIGGERSOURCEUNSPECIFIED TriggerSource = "TRIGGER_SOURCE_UNSPECIFIED"
+	TriggerSourceTRIGGERSOURCECRON        TriggerSource = "TRIGGER_SOURCE_CRON"
+	TriggerSourceTRIGGERSOURCEWEBHOOK     TriggerSource = "TRIGGER_SOURCE_WEBHOOK"
+	TriggerSourceTRIGGERSOURCEUI          TriggerSource = "TRIGGER_SOURCE_UI"
+	TriggerSourceTRIGGERSOURCECLI         TriggerSource = "TRIGGER_SOURCE_CLI"
+)
+
+func (e *TriggerSource) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TriggerSource(s)
+	case string:
+		*e = TriggerSource(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TriggerSource: %T", src)
+	}
+	return nil
+}
+
+type NullTriggerSource struct {
+	TriggerSource TriggerSource
+	Valid         bool // Valid is true if TriggerSource is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTriggerSource) Scan(value interface{}) error {
+	if value == nil {
+		ns.TriggerSource, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TriggerSource.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTriggerSource) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TriggerSource), nil
+}
+
+type TriggerStatus string
+
+const (
+	TriggerStatusTRIGGERSTATUSUNSPECIFIED TriggerStatus = "TRIGGER_STATUS_UNSPECIFIED"
+	TriggerStatusTRIGGERSTATUSACCEPTED    TriggerStatus = "TRIGGER_STATUS_ACCEPTED"
+	TriggerStatusTRIGGERSTATUSREJECTED    TriggerStatus = "TRIGGER_STATUS_REJECTED"
+)
+
+func (e *TriggerStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TriggerStatus(s)
+	case string:
+		*e = TriggerStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TriggerStatus: %T", src)
+	}
+	return nil
+}
+
+type NullTriggerStatus struct {
+	TriggerStatus TriggerStatus
+	Valid         bool // Valid is true if TriggerStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTriggerStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.TriggerStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TriggerStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTriggerStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TriggerStatus), nil
 }
 
 type WindowState string
@@ -215,6 +431,19 @@ type AnnotationWindowType struct {
 	WindowTypeID int64
 }
 
+type DataFunction struct {
+	Name                    string
+	AstHash                 string
+	GitCommitHash           string
+	WorkerName              string
+	OutputModel             []byte
+	IsServed                pgtype.Bool
+	InputModel              []byte
+	ExecutionTimeoutSeconds pgtype.Int4
+	TtlSeconds              pgtype.Int4
+	RegisteredAt            pgtype.Timestamptz
+}
+
 type Metadata struct {
 	WindowsID     int64
 	WindowTypeID  int64
@@ -257,6 +486,31 @@ type Result struct {
 	Error        []byte
 }
 
+type Task struct {
+	Name             string
+	AstHash          string
+	WorkerName       string
+	Description      string
+	ExecutionTimeout pgtype.Int4
+	Deadline         pgtype.Int4
+	RetryCount       pgtype.Int4
+	BackoffStrategy  NullBackoffStrategy
+	InputModel       []byte
+	OutputModel      []byte
+	GitCommitHash    string
+	IsServed         pgtype.Bool
+	RegisteredAt     pgtype.Timestamptz
+}
+
+type TaskRequiredDataFunction struct {
+	TaskName       string
+	TaskAstHash    string
+	TaskWorkerName string
+	DfName         string
+	DfAstHash      string
+	DfWorkerName   string
+}
+
 type Window struct {
 	ID           int64
 	WindowTypeID int64
@@ -281,4 +535,47 @@ type WindowTypeMetadataField struct {
 	MetadataFieldID          int64
 	MetadataFieldName        string
 	MetadataFieldDescription string
+}
+
+type Worker struct {
+	Name          string
+	Md5Hash       string
+	ConnectionUrl string
+}
+
+type Workflow struct {
+	Name                 string
+	Hash                 string
+	WorkerName           string
+	Description          pgtype.Text
+	InputModel           []byte
+	TaskConcurrencyLimit pgtype.Int4
+	HaltOnFailure        pgtype.Bool
+	GitCommitHash        string
+	IsServed             pgtype.Bool
+	RegisteredAt         pgtype.Timestamptz
+}
+
+type WorkflowEdge struct {
+	WorkflowName       string
+	WorkflowHash       string
+	WorkflowWorkerName string
+	FromTaskName       string
+	FromTaskAstHash    string
+	FromTaskWorkerName string
+	ToTaskName         string
+	ToTaskAstHash      string
+	ToTaskWorkerName   string
+}
+
+type WorkflowTransistivePair struct {
+	WorkflowName       string
+	WorkflowHash       string
+	WorkflowWorkerName string
+	FromTaskName       string
+	FromTaskAstHash    string
+	FromTaskWorkerName string
+	ToTaskName         string
+	ToTaskAstHash      string
+	ToTaskWorkerName   string
 }
