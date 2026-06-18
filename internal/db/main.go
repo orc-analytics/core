@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	pb "github.com/orca-telemetry/contract/go"
+	pb "github.com/orca-telemetry/contract/go/v2"
 	"github.com/orca-telemetry/core/internal/dag"
 )
 

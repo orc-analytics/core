@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/orca-telemetry/contract/go"
-	"github.com/orca-telemetry/core/internal/db"
+	pb "github.com/orca-telemetry/contract/go/v2"
+	db "github.com/orca-telemetry/core/internal/db"
+	migrations "github.com/orca-telemetry/core/migrations"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -51,7 +52,7 @@ func setupPgOnce(ctx context.Context) (string, func()) {
 		panic("Failed to get connection string: " + err.Error())
 	}
 
-	err = MigrateDatalayer("postgresql", connStr)
+	err = migrations.MigrateDatalayer(connStr)
 	if err != nil {
 		panic("Failed to migrate database: " + err.Error())
 	}
@@ -108,9 +109,8 @@ func TestAddProcessor(t *testing.T) {
 	}
 
 	algo_2 := pb.Algorithm{
-		Name:       "TestAlgorithm2",
-		Version:    "1.0.0",
-		WindowType: &windowType,
+		Name:    "TestAlgorithm2",
+		Version: "1.0.0", WindowType: &windowType,
 		ResultType: pb.ResultType_VALUE,
 	}
 

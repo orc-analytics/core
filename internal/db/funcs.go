@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	pb "github.com/orca-telemetry/contract/go"
+	pb "github.com/orca-telemetry/contract/go/v2"
 )
 
 type Datalayer struct {

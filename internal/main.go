@@ -5,14 +5,14 @@ import (
 	"log/slog"
 
 	"buf.build/go/protovalidate"
-	pb "github.com/orca-telemetry/contract/go"
+	pb "github.com/orca-telemetry/contract/go/v2"
 	"github.com/orca-telemetry/core/internal/db"
 	"google.golang.org/protobuf/proto"
 )
 
 type (
-	OrcaCoreServer struct {
-		pb.UnimplementedOrcaCoreServer
+	CoreServer struct {
+		pb.UnimplementedCoreServer
 		client *db.Datalayer
 	}
 )
@@ -25,7 +25,7 @@ var (
 func NewServer(
 	ctx context.Context,
 	connStr string,
-) (*OrcaCoreServer, error) {
+) (*CoreServer, error) {
 	client, err := db.NewClient(ctx, connStr)
 	if err != nil {
 		slog.Error(

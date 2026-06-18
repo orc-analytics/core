@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	pb "github.com/orca-telemetry/contract/go"
+	pb "github.com/orca-telemetry/contract/go/v2"
 )
 
 type mockOrcaProcessorServer struct {

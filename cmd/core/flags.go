@@ -10,7 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/orca-telemetry/core/internal"
+	internal "github.com/orca-telemetry/core/internal"
+	migrations "github.com/orca-telemetry/core/migrations"
 )
 
 type cliFlags struct {
@@ -25,51 +26,13 @@ var logLevels = []string{
 	"ERROR",
 }
 
-// valid datalayers - as they are displayed
-var datalayerSuggestions = []string{
-	"postgresql",
-}
+const postgresExampleConnStr = "postgresql://<user>:<pass>@<localhost>:<port>/<db>?<setting=value>"
 
-// templates for filling out connection string
-type (
-	ConnectionStrParser func(connectionStr string, example string) (map[string]string, error)
-	connStringTemplate  struct {
-		validationFunc ConnectionStrParser
-		exampleConnStr string
-	}
-)
-
-var connectionTemplates = map[string]connStringTemplate{
-	"postgresql": {
-		validationFunc: ParsePostgresURL,
-		exampleConnStr: "postgresql://<user>:<pass>@<localhost>:<port>/<db>?<setting=value>",
-	},
-}
-
-// validation functions
-func ValidateDatalayer(s string) error {
-	if s == "" {
-		return fmt.Errorf("platform cannot be determined from connection string")
-	}
-	if slices.Contains(datalayerSuggestions, s) {
-		return nil
-	}
-	return fmt.Errorf("unsupported datalayer: %s", s)
-}
-
-func ValidateConnStr(s, platform string) error {
+func ValidateConnStr(s string) error {
 	if s == "" {
 		return errors.New("connection string cannot be empty")
 	}
-	template, ok := connectionTemplates[platform]
-	if !ok {
-		// If we don't have a specific template, do basic validation
-		if len(s) < 5 {
-			return fmt.Errorf("connection string appears invalid")
-		}
-		return nil
-	}
-	_, err := template.validationFunc(s, template.exampleConnStr)
+	_, err := ParsePostgresURL(s, postgresExampleConnStr)
 	return err
 }
 
@@ -78,7 +41,6 @@ func ValidatePort(port int) error {
 		return fmt.Errorf("invalid port number %d (must be between 1-65535)", port)
 	}
 
-	// check if port is already in use
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("port %d is already in use", port)
@@ -131,24 +93,14 @@ func parseLogLevel(level string) slog.Level {
 }
 
 func validateFlags(flags cliFlags) error {
-	if flags.showHelp {
-		return nil
-	}
 	return nil
 }
 
 func validateConfig(config *internal.Config) error {
-	if config.Platform == "" {
-		return fmt.Errorf("platform cannot be determined from connection string")
-	}
-	if err := ValidateDatalayer(config.Platform); err != nil {
-		return fmt.Errorf("invalid platform: %w", err)
-	}
-
 	if config.ConnectionString == "" {
 		return fmt.Errorf("ORCA_CONNECTION_STRING environment variable is required")
 	}
-	if err := ValidateConnStr(config.ConnectionString, config.Platform); err != nil {
+	if err := ValidateConnStr(config.ConnectionString); err != nil {
 		return fmt.Errorf("invalid connection string: %w", err)
 	}
 
@@ -163,27 +115,24 @@ func validateConfig(config *internal.Config) error {
 	return nil
 }
 
-func runCLI(flags cliFlags) {
+func buildConfig(flags cliFlags) *internal.Config {
 	if flags.showHelp {
 		flag.Usage()
 		fmt.Println("\nEnvironment Variables:")
-		fmt.Println("  ORCA_CONNECTION_STRING  Database connection string (required)")
+		fmt.Println("  ORCA_CONNECTION_STRING  PostgreSQL connection string (required)")
 		fmt.Println("  ORCA_PORT              Server port (default: 4040)")
 		fmt.Println("  ORCA_LOG_LEVEL         Log level (default: INFO)")
 		fmt.Println("  ORCA_ENV               Environment (production/prod for production mode - if in production mode TLS will be used throughout for all gRPC connections)")
-		return
+		return nil
 	}
 
-	// get singleton configuration
 	config := internal.GetConfig()
 
-	// validate configuration
 	if err := validateConfig(config); err != nil {
 		slog.Error("configuration error", "error", err)
 		os.Exit(1)
 	}
 
-	// stdout logger
 	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: parseLogLevel(config.LogLevel),
 	})
@@ -191,23 +140,18 @@ func runCLI(flags cliFlags) {
 	slog.SetDefault(logger)
 
 	slog.Info("starting orca",
-		"platform", config.Platform,
 		"port", config.Port,
 		"production", config.IsProduction,
 		"logLevel", config.LogLevel)
 
-	// perform migrations if requested
 	slog.Info("premigration")
 	if flags.migrate {
-		slog.Info("migrating datalayer", "platform", config.Platform)
-		err := MigrateDatalayer(config.Platform, config.ConnectionString)
+		slog.Info("migrating datalayer")
+		err := migrations.MigrateDatalayer(config.ConnectionString)
 		if err != nil {
 			slog.Error("could not migrate the datalayer, exiting", "error", err)
 			os.Exit(1)
 		}
 	}
-	startGRPCServer(config.Platform, config.ConnectionString, config.Port, config.LogLevel)
-
-	// keep main thread alive
-	select {}
+	return config
 }
