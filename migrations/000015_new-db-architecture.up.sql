@@ -29,6 +29,8 @@ CREATE TYPE registration_status AS ENUM (
 
 CREATE TYPE trigger_status AS ENUM (
     'TRIGGER_STATUS_UNSPECIFIED',
+    'TRIGGER_STATUS_NO_TARGETS',
+    'TRIGGER_STATUS_PENDING',
     'TRIGGER_STATUS_ACCEPTED',
     'TRIGGER_STATUS_REJECTED'
 );
@@ -47,6 +49,23 @@ CREATE TYPE backoff_strategy AS ENUM (
 CREATE TYPE workflow_source AS ENUM (
     'WORKFLOW_SOURCE_WORKER',
     'WORKFLOW_SOURCE_UNDEFINED'
+);
+
+CREATE TYPE datafunction_storage_type AS ENUM (
+    'DATAFUNCTION_STORAGE_FILESYSTEM',
+    'DATAFUNCTION_STORAGE_GCS',
+    'DATAFUNCTION_STORAGE_S3'
+);
+
+CREATE TYPE failure_source AS ENUM (
+    'FAILURE_SOURCE_WORKER',
+    'FAILURE_SOURCE_CORE',
+);
+
+CREATE TYPE failure_category AS ENUM (
+    'FAILURE_CATEGORY_HANDLED',
+    'FAILURE_CATEGORY_UNHANDLED',
+    'FAILURE_CATEGORY_COULDNT_REACH'
 );
 
 -- ============================================================================
@@ -223,7 +242,7 @@ CREATE INDEX workflow_transistive_pairs_id_idx ON workflow_transistive_pairs (id
 -- ============================================================================
 -- RUNTIME
 -- ============================================================================
-CREATE TABLE workflow_triggers (
+CREATE TABLE workflow_trigger (
     id serial PRIMARY KEY,
     workflow_id integer NOT NULL REFERENCES workflow (id),
     created_at timestamptz NOT NULL DEFAULT NOW(),
@@ -232,16 +251,37 @@ CREATE TABLE workflow_triggers (
     execution_parameters jsonb,
 );
 
-CREATE TABLE datafunction_executions (
+CREATE TABLE datafunction_storage_backend (
+    id serial PRIMARY KEY,
+    base_uri string NOT NULL DEFAULT '',
+    storage_type datafunction_storage_backends NOT NULL DEFAULT 'DATAFUNCTION_STORAGE_FILESYSTEM',
+);
+
+CREATE TABLE datafunction_execution (
     id serial PRIMARY KEY,
     workflow_run_id NOT NULL REFERENCES workflow_runs (id),
     uri string NOT NULL,
     status execution_status NOT NULL DEFAULT EXECUTION_STATUS_UNSPECIFIED,
+    completed boolean NOT NULL DEFAULT FALSE,
     requested_at timestamptz NOT NULL DEFAULT NOW(),
     finished_at timestamptz,
 );
 
-CREATE TABLE workflow_executions ();
-
-CREATE TABLE task_executions ();
+CREATE TABLE task_execution (
+    id serial PRIMARY KEY,
+    workflow_runId NOT NULL REFERENCES workflow_runs (id),
+    task_name string NOT NULL REFERENCES task (name),
+    task_ast_hash string NOT NULL REFERENCES task (ast_hash),
+    task_worker_name string NOT NULL REFERENCES task (worker_name),
+    requested_at timestamptz NOT NULL DEFAULT NOW(),
+    result jsonb,
+    failed boolean,
+    completed_at timestamptz,
+    result_recieved_at timestamptz,
+    failure_source failure_source,
+    failure_category failure_category,
+    cpu_seconds integer,
+    memory_gib_seconds integer,
+    execution_duration_seconds integer,
+);
 
