@@ -44,6 +44,11 @@ CREATE TYPE backoff_strategy AS ENUM (
     'BACKOFF_STRATEGY_EXPONENTIAL'
 );
 
+CREATE TYPE workflow_source AS ENUM (
+    'WORKFLOW_SOURCE_WORKER',
+    'WORKFLOW_SOURCE_UNDEFINED'
+);
+
 -- ============================================================================
 -- REGISTRY
 -- ============================================================================
@@ -55,6 +60,7 @@ CREATE TABLE worker (
     name text NOT NULL, -- name of the worker, globally unique - always
     md5_hash text NOT NULL, -- a unique hash combining the assets defined in the worker. mutable.
     connection_url text NOT NULL, -- the connection URL to contact the worker
+    is_serving boolean, -- whether the worker is actively serving
     PRIMARY KEY (name)
 );
 
@@ -67,7 +73,7 @@ CREATE TABLE data_function (
     git_commit_hash text NOT NULL, -- git commit hash of the current commit
     worker_name text NOT NULL REFERENCES worker (name) ON DELETE CASCADE, -- name of the worker that owns it
     output_model jsonb NOT NULL,
-    is_served boolean DEFAULT TRUE, -- a flag that if set to true, denotes
+    is_active boolean DEFAULT TRUE, -- a flag that if set to true, denotes
     -- that this version is currently being served
     input_model jsonb,
     execution_timeout_seconds integer,
@@ -91,7 +97,7 @@ CREATE TABLE task (
     input_model jsonb,
     output_model jsonb,
     git_commit_hash text NOT NULL, -- current git commit
-    is_served boolean DEFAULT TRUE, -- a flag that if set to true, denotes
+    is_active boolean DEFAULT TRUE, -- a flag that if set to true, denotes
     -- that this version is currently being served
     registered_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (name, ast_hash, worker_name) -- ensures that a task can be attached to different workers
@@ -113,34 +119,39 @@ CREATE TABLE task_required_data_functions (
 
 -- workflow definitions
 CREATE TABLE workflow (
+    id serial PRIMARY KEY,
     name text NOT NULL,
     hash text NOT NULL,
-    worker_name text NOT NULL,
+    worker_name text NOT NULL REFERENCES worker (name),
+    source workflow_source NOT NULL DEFAULT 'WORKFLOW_SOURCE_UNDEFINED',
     description text,
     input_model jsonb,
     task_concurrency_limit integer,
     halt_on_failure boolean,
     git_commit_hash text NOT NULL, -- current git commit
-    is_served boolean,
-    registered_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (name, hash, worker_name) -- workflows are globally unique, and are simply defined by their name and contents. We need to track who defined them to that we know when to de-serve them
+    is_active boolean,
+    registered_at timestamptz NOT NULL DEFAULT now()
+    -- workflows are globally unique, and are uniquely defined by their name and contents (hash).
+    -- There is some lifecycle management that needs to be handled, this is done in application code.
+    -- e.g. when a workflow is udpdated, or deleted entirely. As more sources of workflow definition
+    -- are introduced (e.g. web, CLI script), the unique key becomes complex and needs constant
+    -- updating. That is why we just return a unique ID, and manage conflicts & updates in application
+    -- code.
 );
 
 -- defines the edges to workflows
 CREATE TABLE workflow_edges (
-    workflow_name text NOT NULL,
-    workflow_hash text NOT NULL,
-    workflow_worker_name text NOT NULL,
+    workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
     from_task_ast_hash text NOT NULL,
     from_task_worker_name text NOT NULL,
     to_task_name text NOT NULL,
     to_task_ast_hash text NOT NULL,
     to_task_worker_name text NOT NULL,
-    FOREIGN KEY (workflow_name, workflow_hash, workflow_worker_name) REFERENCES workflow (name, hash, worker_name),
+    FOREIGN KEY (workflow_id) REFERENCES workflow (id),
     FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_name) REFERENCES task (name, ast_hash, worker_name) ON DELETE CASCADE,
     FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_name) REFERENCES task (name, ast_hash, worker_name) ON DELETE CASCADE,
-    PRIMARY KEY (workflow_name, workflow_hash, workflow_worker_name, from_task_name, from_task_ast_hash, from_task_worker_name, to_task_name, to_task_ast_hash, to_task_worker_name)
+    PRIMARY KEY (workflow_id, from_task_name, from_task_ast_hash, from_task_worker_name, to_task_name, to_task_ast_hash, to_task_worker_name)
 );
 
 -- transistive pairs. contains edges between each task that will eventually reach
@@ -157,34 +168,32 @@ CREATE TABLE workflow_edges (
 -- A->D - this exists, so the new pair would introduce a cycle.
 -- search indices
 CREATE TABLE workflow_transistive_pairs (
-    workflow_name text NOT NULL,
-    workflow_hash text NOT NULL,
-    workflow_worker_name text NOT NULL,
+    workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
     from_task_ast_hash text NOT NULL,
     from_task_worker_name text NOT NULL,
     to_task_name text NOT NULL,
     to_task_ast_hash text NOT NULL,
     to_task_worker_name text NOT NULL,
-    FOREIGN KEY (workflow_name, workflow_hash, workflow_worker_name) REFERENCES workflow (name, hash, worker_name),
+    FOREIGN KEY (workflow_id) REFERENCES workflow (id),
     FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_name) REFERENCES task (name, ast_hash, worker_name) ON DELETE CASCADE,
     FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_name) REFERENCES task (name, ast_hash, worker_name) ON DELETE CASCADE,
-    PRIMARY KEY (workflow_name, workflow_hash, workflow_worker_name, from_task_name, from_task_ast_hash, from_task_worker_name, to_task_name, to_task_ast_hash, to_task_worker_name)
+    PRIMARY KEY (workflow_id, from_task_name, from_task_ast_hash, from_task_worker_name, to_task_name, to_task_ast_hash, to_task_worker_name)
 );
 
 -- partial indices ensure that no two data functions, tasks and workflows with the same
 -- name can exist that are both served
 CREATE UNIQUE INDEX one_active_owner_per_data_function ON data_function (name)
 WHERE
-    is_served = TRUE;
+    is_active = TRUE;
 
 CREATE UNIQUE INDEX one_active_owner_per_task ON task (name)
 WHERE
-    is_served = TRUE;
+    is_active = TRUE;
 
 CREATE UNIQUE INDEX one_active_owner_per_workflow ON workflow (name)
 WHERE
-    is_served = TRUE;
+    is_active = TRUE;
 
 -- indexes for search performance
 CREATE INDEX data_function_worker_idx ON data_function (worker_name);
@@ -203,15 +212,36 @@ CREATE INDEX workflow_name_idx ON workflow (name);
 
 CREATE INDEX workflow_hash_idx ON workflow (hash);
 
-CREATE INDEX workflow_git_commit_idx ON workflow (git_commit_has);
+CREATE INDEX workflow_git_commit_idx ON workflow (git_commit_hash);
 
 CREATE INDEX workflow_registered_at_idx ON workflow (registered_at);
 
-CREATE INDEX workflow_edges_name_idx ON workflow_edges (workflow_name);
+CREATE INDEX workflow_edges_id_idx ON workflow_edges (id);
 
-CREATE INDEX workflow_edges_hash_idx ON workflow_edges (workflow_hash);
+CREATE INDEX workflow_transistive_pairs_id_idx ON workflow_transistive_pairs (id);
 
-CREATE INDEX workflow_transistive_pairs_name_idx ON workflow_transistive_pairs (workflow_name);
+-- ============================================================================
+-- RUNTIME
+-- ============================================================================
+CREATE TABLE workflow_triggers (
+    id serial PRIMARY KEY,
+    workflow_id integer NOT NULL REFERENCES workflow (id),
+    created_at timestamptz NOT NULL DEFAULT NOW(),
+    source trigger_source NOT NULL DEFAULT 'TRIGGER_SOURCE_UNSPECIFIED',
+    status trigger_status NOT NULL DEFAULT 'TRIGGER_STATUS_UNSPECIFIED',
+    execution_parameters jsonb,
+);
 
-CREATE INDEX workflow_transistive_pairs_hash_idx ON workflow_transistive_pairs (workflow_hash);
+CREATE TABLE datafunction_executions (
+    id serial PRIMARY KEY,
+    workflow_run_id NOT NULL REFERENCES workflow_runs (id),
+    uri string NOT NULL,
+    status execution_status NOT NULL DEFAULT EXECUTION_STATUS_UNSPECIFIED,
+    requested_at timestamptz NOT NULL DEFAULT NOW(),
+    finished_at timestamptz,
+);
+
+CREATE TABLE workflow_executions ();
+
+CREATE TABLE task_executions ();
 
