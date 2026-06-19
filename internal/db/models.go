@@ -607,7 +607,7 @@ type DataFunction struct {
 	Name                    string
 	AstHash                 string
 	GitCommitHash           string
-	WorkerName              string
+	WorkerID                int32
 	OutputModel             []byte
 	IsActive                pgtype.Bool
 	InputModel              []byte
@@ -677,7 +677,7 @@ type Result struct {
 type Task struct {
 	Name             string
 	AstHash          string
-	WorkerName       string
+	WorkerID         int32
 	Description      string
 	ExecutionTimeout pgtype.Int4
 	Deadline         pgtype.Int4
@@ -692,10 +692,10 @@ type Task struct {
 
 type TaskExecution struct {
 	ID                       int32
-	WorkflowRunid            int32
+	WorkflowRunID            int32
 	TaskName                 string
 	TaskAstHash              string
-	TaskWorkerName           string
+	TaskWorkerID             string
 	RequestedAt              pgtype.Timestamptz
 	Result                   []byte
 	Failed                   pgtype.Bool
@@ -709,12 +709,12 @@ type TaskExecution struct {
 }
 
 type TaskRequiredDataFunction struct {
-	TaskName       string
-	TaskAstHash    string
-	TaskWorkerName string
-	DfName         string
-	DfAstHash      string
-	DfWorkerName   string
+	TaskName     string
+	TaskAstHash  string
+	TaskWorkerID int32
+	DfName       string
+	DfAstHash    string
+	DfWorkerID   string
 }
 
 type Window struct {
@@ -744,17 +744,35 @@ type WindowTypeMetadataField struct {
 }
 
 type Worker struct {
-	Name          string
-	Md5Hash       string
+	ID            pgtype.UUID
+	PublicKey     string
 	ConnectionUrl string
-	IsServing     pgtype.Bool
+	IsServing     bool
+	CreatedAt     pgtype.Timestamptz
+}
+
+type WorkerNonce struct {
+	ID        pgtype.UUID
+	WorkerID  pgtype.UUID
+	Nonce     []byte
+	ExpiresAt pgtype.Timestamptz
+	Used      bool
+}
+
+type WorkerSession struct {
+	ID        pgtype.UUID
+	WorkerID  pgtype.UUID
+	AccessKey []byte
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+	Revoked   bool
 }
 
 type Workflow struct {
 	ID                   int32
 	Name                 string
 	Hash                 string
-	WorkerName           string
+	WorkerID             int32
 	Source               WorkflowSource
 	Description          pgtype.Text
 	InputModel           []byte
@@ -766,30 +784,30 @@ type Workflow struct {
 }
 
 type WorkflowEdge struct {
-	WorkflowID         int32
-	FromTaskName       string
-	FromTaskAstHash    string
-	FromTaskWorkerName string
-	ToTaskName         string
-	ToTaskAstHash      string
-	ToTaskWorkerName   string
+	WorkflowID       int32
+	FromTaskName     string
+	FromTaskAstHash  string
+	FromTaskWorkerID string
+	ToTaskName       string
+	ToTaskAstHash    string
+	ToTaskWorkerID   string
 }
 
-type WorkflowTransistivePair struct {
-	WorkflowID         int32
-	FromTaskName       string
-	FromTaskAstHash    string
-	FromTaskWorkerName string
-	ToTaskName         string
-	ToTaskAstHash      string
-	ToTaskWorkerName   string
-}
-
-type WorkflowTrigger struct {
+type WorkflowRun struct {
 	ID                  int32
 	WorkflowID          int32
 	CreatedAt           pgtype.Timestamptz
 	Source              TriggerSource
 	Status              TriggerStatus
 	ExecutionParameters []byte
+}
+
+type WorkflowTransistivePair struct {
+	WorkflowID       int32
+	FromTaskName     string
+	FromTaskAstHash  string
+	FromTaskWorkerID int32
+	ToTaskName       string
+	ToTaskAstHash    string
+	ToTaskWorkerID   int32
 }

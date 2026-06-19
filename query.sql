@@ -1,410 +1,89 @@
--- name: CreateProcessor :exec
-INSERT INTO processor (
-  name,
-  runtime,
-  connection_string,
-  project_name
-) VALUES (
-  sqlc.arg('name'),
-  sqlc.arg('runtime'),
-  sqlc.arg('connection_string'),
-  sqlc.arg('project_name')
-) ON CONFLICT (name, runtime) DO UPDATE 
-SET 
-  name = EXCLUDED.name,
-  runtime = EXCLUDED.runtime,
-  connection_string = EXCLUDED.connection_string,
-  project_name = EXCLUDED.project_name
-RETURNING id;
+-- ============================================================
+-- Worker
+-- ============================================================
+-- name: RegisterWorker :one
+INSERT INTO worker (public_key, connection_url)
+    VALUES (@public_key, @connection_url)
+RETURNING
+    id;
 
--- name: CreateMetadataField :one
-INSERT INTO metadata_fields (
-  name,
-  description,
-  filter
-) VALUES (
-  sqlc.arg('name'),
-  sqlc.arg('description'),
-  sqlc.arg('filter')
-) ON CONFLICT (name) DO UPDATE
-SET
-  name = EXCLUDED.name,
-  description = EXCLUDED.description
-RETURNING id;
-
--- name: CreateWindowType :one
-INSERT INTO window_type (
-  name,
-  version,
-  description
-) VALUES (
-  sqlc.arg('name'),
-  sqlc.arg('version'),
-  sqlc.arg('description')
-) ON CONFLICT (name, version) DO UPDATE
-SET
-  name = EXCLUDED.name,
-  version = EXCLUDED.version,
-  description = EXCLUDED.description
-RETURNING id;
-
--- name: CreateWindowTypeMetadataFieldBridge :exec
-INSERT INTO metadata_fields_references (
-  window_type_id,
-  metadata_fields_id
-) VALUES (
-  sqlc.arg('window_type_id'),
-  sqlc.arg('metadata_fields_id')
-) ON CONFLICT (window_type_id, metadata_fields_id) DO UPDATE
-SET 
-  window_type_id = EXCLUDED.window_type_id,
-  metadata_fields_id = EXCLUDED.metadata_fields_id;
-
--- name: CreateAlgorithm :exec
-WITH processor_id AS (
-  SELECT id FROM processor p
-  WHERE p.name = sqlc.arg('processor_name') 
-  AND p.runtime = sqlc.arg('processor_runtime')
-),
-window_type_id AS (
-  SELECT id FROM window_type w
-  WHERE w.name = sqlc.arg('window_type_name') 
-  AND w.version = sqlc.arg('window_type_version')
-)
-INSERT INTO algorithm (
-  name,
-  version,
-  description,
-  processor_id,
-  window_type_id,
-  result_type,
-  self_lookback_count, 
-  self_lookback_timedelta,
-  self_lookback_gap_count,
-  self_lookback_gap_timedelta
-) VALUES (
-  sqlc.arg('name'),
-  sqlc.arg('version'),
-  sqlc.arg('description'),
-  (SELECT id FROM processor_id),
-  (SELECT id FROM window_type_id),
-  sqlc.arg('result_type'),
-  sqlc.arg('self_lookback_count'),
-  sqlc.arg('self_lookback_timedelta'),
-  sqlc.arg('self_lookback_gap_count'),
-  sqlc.arg('self_lookback_gap_timedelta')
-) ON CONFLICT DO NOTHING ;
-
--- name: ReadAlgorithmsForWindow :many
-SELECT a.* FROM algorithm a
-JOIN window_type wt ON a.window_type_id = wt.id
-WHERE wt.name = sqlc.arg('window_type_name') 
-AND wt.version = sqlc.arg('window_type_version');
-
--- name: ReadAlgorithms :many
-SELECT a.* FROM algorithm a;
-
--- name: ReadAlgorithmsForProcessorId :many
-SELECT a.* FROM algorithm a
-WHERE a.processor_id = sqlc.arg('processor_id');
-
--- name: CreateAlgorithmDependency :exec
-WITH from_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = sqlc.arg('from_algorithm_name')
-  AND a.version = sqlc.arg('from_algorithm_version')
-  AND p.name = sqlc.arg('from_processor_name')
-  AND p.runtime = sqlc.arg('from_processor_runtime')
-),
-to_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = sqlc.arg('to_algorithm_name')
-  AND a.version = sqlc.arg('to_algorithm_version')
-  AND p.name = sqlc.arg('to_processor_name')
-  AND p.runtime = sqlc.arg('to_processor_runtime')
-)
-INSERT INTO algorithm_dependency (
-  from_algorithm_id,
-  to_algorithm_id,
-  from_window_type_id,
-  to_window_type_id,
-  from_processor_id,
-  to_processor_id,
-  lookback_count,
-  lookback_timedelta,
-  lookback_gap_count,
-  lookback_gap_timedelta
-) VALUES (
-  (SELECT id FROM from_algo LIMIT 1),
-  (SELECT id FROM to_algo LIMIT 1),
-  (SELECT window_type_id FROM from_algo LIMIT 1),
-  (SELECT window_type_id FROM to_algo LIMIT 1),
-  (SELECT processor_id FROM from_algo LIMIT 1),
-  (SELECT processor_id FROM to_algo LIMIT 1),
-  sqlc.arg('lookback_count'),
-  sqlc.arg('lookback_timedelta'),
-  sqlc.arg('lookback_gap_count'),
-  sqlc.arg('lookback_gap_timedelta')
-) ON CONFLICT (from_algorithm_id, to_algorithm_id) DO UPDATE
-  SET
-    from_window_type_id = excluded.from_window_type_id,
-    to_window_type_id = excluded.to_window_type_id,
-    from_processor_id = excluded.from_processor_id,
-    to_processor_id = excluded.to_processor_id,
-    lookback_count = excluded.lookback_count,
-    lookback_timedelta = excluded.lookback_timedelta;
-
--- name: ReadFromAlgorithmDependencies :many
-WITH from_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = sqlc.arg('from_algorithm_name')
-  AND a.version = sqlc.arg('from_algorithm_version')
-  AND p.name = sqlc.arg('from_processor_name')
-  AND p.runtime = sqlc.arg('from_processor_runtime')
-)
-SELECT ad.* FROM algorithm_dependency ad WHERE ad.from_algorithm_id = from_algo.id;
-
--- name: ReadAlgorithmId :one
-WITH processor_id AS (
-  SELECT p.id FROM processor p
-  WHERE p.name = sqlc.arg('processor_name')
-  AND p.runtime = sqlc.arg('processor_runtime')
-)
-SELECT a.id FROM algorithm a
-WHERE a.name = sqlc.arg('algorithm_name')
-AND a.version = sqlc.arg('algorithm_version')
-AND a.processor_id = (SELECT id from processor_id);
-  
--- name: ReadAlgorithmExecutionPaths :many
-SELECT aep.* FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || sqlc.arg('window_type_id')::TEXT || '.*')::lquery;
-
--- name: ReadAlgorithmExecutionPathsForAlgo :many
-SELECT aep.* FROM algorithm_execution_paths aep WHERE aep.final_algo_id=sqlc.arg('algo_id');
-
--- name: ReadWindowTypes :many
-SELECT wt.* FROM window_type wt;
-
--- name: ReadWindowTypesByName :many
-SELECT wt.* FROM window_type wt
-WHERE wt.name = sqlc.arg('name') AND wt.version = sqlc.arg('version');
-
--- name: RegisterWindow :one
-WITH window_type_id AS (
-  SELECT id FROM window_type 
-  WHERE name = sqlc.arg('window_type_name') 
-  AND version = sqlc.arg('window_type_version')
-)
-INSERT INTO windows (
-  window_type_id,
-  time_from, 
-  time_to,
-  origin
-) VALUES (
-  (SELECT id FROM window_type_id),
-  sqlc.arg('time_from'),
-  sqlc.arg('time_to'),
-  sqlc.arg('origin')
-) RETURNING window_type_id, id;
-
--- name: UpdateWindowState :exec
-UPDATE windows SET state = sqlc.arg('state') WHERE id = sqlc.arg('window_id');
-
--- name: RegisterMetadata :exec
-INSERT INTO metadata (
-  windows_id,
-  window_type_id,
-  metadata_key,
-  metadata_value,
-  metadata_array,
-  metadata_json
-) VALUES (
-  sqlc.arg('windows_id'),
-  sqlc.arg('window_type_id'),
-  sqlc.arg('metadata_key'),
-  sqlc.arg('metadata_value'),
-  sqlc.arg('metadata_array'),
-  sqlc.arg('metadata_json')
-) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
-SET
-  metadata_value = EXCLUDED.metadata_value,
-  metadata_array = EXCLUDED.metadata_array,
-  metadata_json  = EXCLUDED.metadata_json;
-
--- name: CreateResult :one
-INSERT INTO results (
-  windows_id,
-  window_type_id, 
-  algorithm_id
-) VALUES (
-  sqlc.arg('windows_id'),
-  sqlc.arg('window_type_id'),
-  sqlc.arg('algorithm_id')
-) RETURNING id;
-
--- name: UpdateResultState :exec
-UPDATE results SET state = sqlc.arg('state') WHERE id = sqlc.arg('result_id');
-
--- name: FinaliseResult :exec
-UPDATE results SET
-    result_value = sqlc.arg('result_value'),
-    result_array = sqlc.arg('result_array'),
-    result_json = sqlc.arg('result_json'),
-    state = sqlc.arg('state'),
-    error = sqlc.arg('err')
-WHERE id = sqlc.arg('result_id');
-
--- name: ReadProcessors :many
-SELECT * FROM processor;
-
--- name: ReadProcessorExcludeProject :many
-SELECT * FROM processor WHERE project_name != sqlc.arg('project_name');
-
--- name: ReadProcessorsByIDs :many
-SELECT *
-FROM processor
-WHERE id = ANY(sqlc.arg('processor_ids')::bigint[])
-ORDER BY name, runtime;
-
--- name: ReadMetadataFieldsByWindowType :many
-SELECT m.* FROM 
-metadata_fields m
-JOIN metadata_fields_references ON m.id = metadata_fields_references.metadata_fields_id
-WHERE window_type_id = sqlc.arg('window_type_id')
-ORDER BY m.name;
-
--- name: ReadMetadataFields :many
-SELECT * FROM metadata_fields;
-
--- name: ReadWindowTypeMetadataFields :many
-SELECT * FROM window_type_metadata_fields;
-
--- name: ReadResultsForAlgorithmByTimedelta :many
+-- name: GetWorkerByID :one
 SELECT
-    r.id as result_id,
-    r.algorithm_id,
-    w.id as window_id,
-    a.result_type,
-    r.result_value, 
-    r.result_array,
-    r.result_json,
-    wt.name as window_type_name, 
-    wt.version as window_type_version,
-    w.time_from as window_time_from,
-    w.time_to as window_time_to,
-    w.origin as window_origin,
-    jsonb_object_agg(m.metadata_key,
-        COALESCE(
-          to_jsonb(m.metadata_value),
-          to_jsonb(m.metadata_array),
-          m.metadata_json
-        )
-      ) AS window_metadata
-FROM results r
-JOIN windows w ON w.id = r.windows_id
-JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id
-JOIN metadata m ON m.windows_id = r.windows_id
+    id,
+    public_key,
+    connection_url,
+    is_serving,
+    created_at
+FROM
+    worker
 WHERE
-    r.algorithm_id = sqlc.arg('algorithm_id')
-    AND w.time_from > sqlc.arg('search_from')
-    AND w.time_to < sqlc.arg('search_to')
-    AND r.state = 'SUCCEEDED'
-GROUP BY
-    r.id, r.algorithm_id, w.id, a.result_type,
-    r.result_value, r.result_array, r.result_json,
-    wt.name, wt.version, w.time_from, w.time_to, w.origin
-HAVING
-    -- No filter applied
-    (
-        sqlc.narg('metadata_filters')::jsonb IS NULL
-    )
-    OR (
-        -- Every filter entry must be satisfied by some metadata row on this window
-        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
-        sqlc.narg('metadata_filters')::jsonb IS NOT NULL
-        AND NOT EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(sqlc.narg('metadata_filters')::jsonb) AS f
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM metadata m2
-                WHERE m2.windows_id = r.windows_id
-                  AND m2.metadata_key = f->>'key'
-                  AND (
-                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
-                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
-                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
-                  )
-            )
-        )
-    )
-ORDER BY w.time_from, w.time_to DESC
-LIMIT sqlc.narg('limit')
-OFFSET sqlc.arg('count_offset');
+    id = @id;
 
--- name: ReadResultsForAlgorithmByCount :many
-SELECT
-    r.id as result_id,
-    r.algorithm_id,
-    w.id as window_id,
-    a.result_type,
-    r.result_value, 
-    r.result_array,
-    r.result_json,
-    wt.name as window_type_name, 
-    wt.version as window_type_version,
-    w.time_from as window_time_from,
-    w.time_to as window_time_to,
-    w.origin as window_origin,
-    jsonb_object_agg(m.metadata_key, 
-        COALESCE(
-          to_jsonb(m.metadata_value),
-          to_jsonb(m.metadata_array),
-          m.metadata_json
-        )
-      ) AS window_metadata
-FROM results r
-JOIN windows w ON w.id = r.windows_id
-JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id
-JOIN metadata m ON m.windows_id = r.windows_id
+-- name: SetWorkerServing :exec
+UPDATE
+    worker
+SET
+    is_serving = @is_serving
 WHERE
-    r.algorithm_id = sqlc.arg('algorithm_id')
-    AND w.time_to < sqlc.arg('search_to')
-    AND r.state = 'SUCCEEDED'
-GROUP BY
-    r.id, r.algorithm_id, w.id, a.result_type,
-    r.result_value, r.result_array, r.result_json,
-    wt.name, wt.version, w.time_from, w.time_to, w.origin
-HAVING
-    -- No filter applied
-    (
-        sqlc.arg('metadata_filters')::jsonb IS NULL
-    )
-    OR (
-        -- Every filter entry must be satisfied by some metadata row on this window
-        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
-        sqlc.arg('metadata_filters')::jsonb IS NOT NULL
-        AND NOT EXISTS (
-            -- Check that no filter goes unsatisfied
-            SELECT 1
-            FROM jsonb_array_elements(sqlc.arg('metadata_filters')::jsonb) AS f
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM metadata m2
-                WHERE m2.windows_id = r.windows_id
-                  AND m2.metadata_key = f->>'key'
-                  AND (
-                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
-                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
-                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
-                  )
-            )
-        )
-    )
-ORDER BY w.time_from, w.time_to DESC
-LIMIT sqlc.narg('limit')
-OFFSET sqlc.arg('count_offset');
+    id = @id;
+
+-- ============================================================
+-- Nonce
+-- ============================================================
+-- name: CreateNonce :one
+INSERT INTO worker_nonce (worker_id, nonce)
+    VALUES (@worker_id, @nonce)
+RETURNING
+    id, nonce, expires_at;
+
+-- name: ConsumeNonce :one
+UPDATE
+    worker_nonce
+SET
+    used = TRUE
+WHERE
+    nonce = @nonce
+    AND worker_id = @worker_id
+    AND used = FALSE
+    AND expires_at > now()
+RETURNING
+    id,
+    worker_id;
+
+-- name: DeleteExpiredNonces :exec
+DELETE FROM worker_nonce
+WHERE expires_at < now();
+
+-- ============================================================
+-- Session
+-- ============================================================
+-- name: CreateSession :one
+INSERT INTO worker_session (worker_id, access_key, expires_at)
+    VALUES (@worker_id, @access_key, @expires_at)
+RETURNING
+    id, access_key, expires_at;
+
+-- name: GetSession :one
+SELECT
+    id,
+    worker_id,
+    expires_at
+FROM
+    worker_session
+WHERE
+    access_key = @access_key
+    AND revoked = FALSE
+    AND expires_at > now();
+
+-- name: RevokeSession :exec
+UPDATE
+    worker_session
+SET
+    revoked = TRUE
+WHERE
+    access_key = @access_key;
+
+-- name: DeleteExpiredSessions :exec
+DELETE FROM worker_session
+WHERE expires_at < now();
+

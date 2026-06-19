@@ -11,1242 +11,218 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createAlgorithm = `-- name: CreateAlgorithm :exec
-WITH processor_id AS (
-  SELECT id FROM processor p
-  WHERE p.name = $9 
-  AND p.runtime = $10
-),
-window_type_id AS (
-  SELECT id FROM window_type w
-  WHERE w.name = $11 
-  AND w.version = $12
-)
-INSERT INTO algorithm (
-  name,
-  version,
-  description,
-  processor_id,
-  window_type_id,
-  result_type,
-  self_lookback_count, 
-  self_lookback_timedelta,
-  self_lookback_gap_count,
-  self_lookback_gap_timedelta
-) VALUES (
-  $1,
-  $2,
-  $3,
-  (SELECT id FROM processor_id),
-  (SELECT id FROM window_type_id),
-  $4,
-  $5,
-  $6,
-  $7,
-  $8
-) ON CONFLICT DO NOTHING
-`
-
-type CreateAlgorithmParams struct {
-	Name                     string
-	Version                  string
-	Description              string
-	ResultType               ResultType
-	SelfLookbackCount        int64
-	SelfLookbackTimedelta    int64
-	SelfLookbackGapCount     int64
-	SelfLookbackGapTimedelta int64
-	ProcessorName            string
-	ProcessorRuntime         string
-	WindowTypeName           string
-	WindowTypeVersion        string
-}
-
-func (q *Queries) CreateAlgorithm(ctx context.Context, arg CreateAlgorithmParams) error {
-	_, err := q.db.Exec(ctx, createAlgorithm,
-		arg.Name,
-		arg.Version,
-		arg.Description,
-		arg.ResultType,
-		arg.SelfLookbackCount,
-		arg.SelfLookbackTimedelta,
-		arg.SelfLookbackGapCount,
-		arg.SelfLookbackGapTimedelta,
-		arg.ProcessorName,
-		arg.ProcessorRuntime,
-		arg.WindowTypeName,
-		arg.WindowTypeVersion,
-	)
-	return err
-}
-
-const createAlgorithmDependency = `-- name: CreateAlgorithmDependency :exec
-WITH from_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = $5
-  AND a.version = $6
-  AND p.name = $7
-  AND p.runtime = $8
-),
-to_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = $9
-  AND a.version = $10
-  AND p.name = $11
-  AND p.runtime = $12
-)
-INSERT INTO algorithm_dependency (
-  from_algorithm_id,
-  to_algorithm_id,
-  from_window_type_id,
-  to_window_type_id,
-  from_processor_id,
-  to_processor_id,
-  lookback_count,
-  lookback_timedelta,
-  lookback_gap_count,
-  lookback_gap_timedelta
-) VALUES (
-  (SELECT id FROM from_algo LIMIT 1),
-  (SELECT id FROM to_algo LIMIT 1),
-  (SELECT window_type_id FROM from_algo LIMIT 1),
-  (SELECT window_type_id FROM to_algo LIMIT 1),
-  (SELECT processor_id FROM from_algo LIMIT 1),
-  (SELECT processor_id FROM to_algo LIMIT 1),
-  $1,
-  $2,
-  $3,
-  $4
-) ON CONFLICT (from_algorithm_id, to_algorithm_id) DO UPDATE
-  SET
-    from_window_type_id = excluded.from_window_type_id,
-    to_window_type_id = excluded.to_window_type_id,
-    from_processor_id = excluded.from_processor_id,
-    to_processor_id = excluded.to_processor_id,
-    lookback_count = excluded.lookback_count,
-    lookback_timedelta = excluded.lookback_timedelta
-`
-
-type CreateAlgorithmDependencyParams struct {
-	LookbackCount        int64
-	LookbackTimedelta    int64
-	LookbackGapCount     int64
-	LookbackGapTimedelta int64
-	FromAlgorithmName    string
-	FromAlgorithmVersion string
-	FromProcessorName    string
-	FromProcessorRuntime string
-	ToAlgorithmName      string
-	ToAlgorithmVersion   string
-	ToProcessorName      string
-	ToProcessorRuntime   string
-}
-
-func (q *Queries) CreateAlgorithmDependency(ctx context.Context, arg CreateAlgorithmDependencyParams) error {
-	_, err := q.db.Exec(ctx, createAlgorithmDependency,
-		arg.LookbackCount,
-		arg.LookbackTimedelta,
-		arg.LookbackGapCount,
-		arg.LookbackGapTimedelta,
-		arg.FromAlgorithmName,
-		arg.FromAlgorithmVersion,
-		arg.FromProcessorName,
-		arg.FromProcessorRuntime,
-		arg.ToAlgorithmName,
-		arg.ToAlgorithmVersion,
-		arg.ToProcessorName,
-		arg.ToProcessorRuntime,
-	)
-	return err
-}
-
-const createMetadataField = `-- name: CreateMetadataField :one
-INSERT INTO metadata_fields (
-  name,
-  description,
-  filter
-) VALUES (
-  $1,
-  $2,
-  $3
-) ON CONFLICT (name) DO UPDATE
+const consumeNonce = `-- name: ConsumeNonce :one
+UPDATE
+    worker_nonce
 SET
-  name = EXCLUDED.name,
-  description = EXCLUDED.description
-RETURNING id
-`
-
-type CreateMetadataFieldParams struct {
-	Name        string
-	Description string
-	Filter      pgtype.Bool
-}
-
-func (q *Queries) CreateMetadataField(ctx context.Context, arg CreateMetadataFieldParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createMetadataField, arg.Name, arg.Description, arg.Filter)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createProcessor = `-- name: CreateProcessor :exec
-INSERT INTO processor (
-  name,
-  runtime,
-  connection_string,
-  project_name
-) VALUES (
-  $1,
-  $2,
-  $3,
-  $4
-) ON CONFLICT (name, runtime) DO UPDATE 
-SET 
-  name = EXCLUDED.name,
-  runtime = EXCLUDED.runtime,
-  connection_string = EXCLUDED.connection_string,
-  project_name = EXCLUDED.project_name
-RETURNING id
-`
-
-type CreateProcessorParams struct {
-	Name             string
-	Runtime          string
-	ConnectionString string
-	ProjectName      pgtype.Text
-}
-
-func (q *Queries) CreateProcessor(ctx context.Context, arg CreateProcessorParams) error {
-	_, err := q.db.Exec(ctx, createProcessor,
-		arg.Name,
-		arg.Runtime,
-		arg.ConnectionString,
-		arg.ProjectName,
-	)
-	return err
-}
-
-const createResult = `-- name: CreateResult :one
-INSERT INTO results (
-  windows_id,
-  window_type_id, 
-  algorithm_id
-) VALUES (
-  $1,
-  $2,
-  $3
-) RETURNING id
-`
-
-type CreateResultParams struct {
-	WindowsID    pgtype.Int8
-	WindowTypeID pgtype.Int8
-	AlgorithmID  pgtype.Int8
-}
-
-func (q *Queries) CreateResult(ctx context.Context, arg CreateResultParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createResult, arg.WindowsID, arg.WindowTypeID, arg.AlgorithmID)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createWindowType = `-- name: CreateWindowType :one
-INSERT INTO window_type (
-  name,
-  version,
-  description
-) VALUES (
-  $1,
-  $2,
-  $3
-) ON CONFLICT (name, version) DO UPDATE
-SET
-  name = EXCLUDED.name,
-  version = EXCLUDED.version,
-  description = EXCLUDED.description
-RETURNING id
-`
-
-type CreateWindowTypeParams struct {
-	Name        string
-	Version     string
-	Description string
-}
-
-func (q *Queries) CreateWindowType(ctx context.Context, arg CreateWindowTypeParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createWindowType, arg.Name, arg.Version, arg.Description)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const createWindowTypeMetadataFieldBridge = `-- name: CreateWindowTypeMetadataFieldBridge :exec
-INSERT INTO metadata_fields_references (
-  window_type_id,
-  metadata_fields_id
-) VALUES (
-  $1,
-  $2
-) ON CONFLICT (window_type_id, metadata_fields_id) DO UPDATE
-SET 
-  window_type_id = EXCLUDED.window_type_id,
-  metadata_fields_id = EXCLUDED.metadata_fields_id
-`
-
-type CreateWindowTypeMetadataFieldBridgeParams struct {
-	WindowTypeID     int64
-	MetadataFieldsID int64
-}
-
-func (q *Queries) CreateWindowTypeMetadataFieldBridge(ctx context.Context, arg CreateWindowTypeMetadataFieldBridgeParams) error {
-	_, err := q.db.Exec(ctx, createWindowTypeMetadataFieldBridge, arg.WindowTypeID, arg.MetadataFieldsID)
-	return err
-}
-
-const finaliseResult = `-- name: FinaliseResult :exec
-UPDATE results SET
-    result_value = $1,
-    result_array = $2,
-    result_json = $3,
-    state = $4,
-    error = $5
-WHERE id = $6
-`
-
-type FinaliseResultParams struct {
-	ResultValue pgtype.Float8
-	ResultArray []float64
-	ResultJson  []byte
-	State       AlgorithmState
-	Err         []byte
-	ResultID    int64
-}
-
-func (q *Queries) FinaliseResult(ctx context.Context, arg FinaliseResultParams) error {
-	_, err := q.db.Exec(ctx, finaliseResult,
-		arg.ResultValue,
-		arg.ResultArray,
-		arg.ResultJson,
-		arg.State,
-		arg.Err,
-		arg.ResultID,
-	)
-	return err
-}
-
-const readAlgorithmExecutionPaths = `-- name: ReadAlgorithmExecutionPaths :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path, aep.lookback_gap_count_path, aep.lookback_gap_timedelta_path, aep.self_lookback_gap_count_path, aep.self_lookback_gap_timedelta_path FROM algorithm_execution_paths aep WHERE aep.window_type_id_path ~ ('*.' || $1::TEXT || '.*')::lquery
-`
-
-func (q *Queries) ReadAlgorithmExecutionPaths(ctx context.Context, windowTypeID string) ([]AlgorithmExecutionPath, error) {
-	rows, err := q.db.Query(ctx, readAlgorithmExecutionPaths, windowTypeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AlgorithmExecutionPath
-	for rows.Next() {
-		var i AlgorithmExecutionPath
-		if err := rows.Scan(
-			&i.FinalAlgoID,
-			&i.NumDependencies,
-			&i.AlgoIDPath,
-			&i.WindowTypeIDPath,
-			&i.ProcIDPath,
-			&i.LookbackCountPath,
-			&i.LookbackTimedeltaPath,
-			&i.SelfLookbackCountPath,
-			&i.SelfLookbackTimedeltaPath,
-			&i.LookbackGapCountPath,
-			&i.LookbackGapTimedeltaPath,
-			&i.SelfLookbackGapCountPath,
-			&i.SelfLookbackGapTimedeltaPath,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readAlgorithmExecutionPathsForAlgo = `-- name: ReadAlgorithmExecutionPathsForAlgo :many
-SELECT aep.final_algo_id, aep.num_dependencies, aep.algo_id_path, aep.window_type_id_path, aep.proc_id_path, aep.lookback_count_path, aep.lookback_timedelta_path, aep.self_lookback_count_path, aep.self_lookback_timedelta_path, aep.lookback_gap_count_path, aep.lookback_gap_timedelta_path, aep.self_lookback_gap_count_path, aep.self_lookback_gap_timedelta_path FROM algorithm_execution_paths aep WHERE aep.final_algo_id=$1
-`
-
-func (q *Queries) ReadAlgorithmExecutionPathsForAlgo(ctx context.Context, algoID int64) ([]AlgorithmExecutionPath, error) {
-	rows, err := q.db.Query(ctx, readAlgorithmExecutionPathsForAlgo, algoID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AlgorithmExecutionPath
-	for rows.Next() {
-		var i AlgorithmExecutionPath
-		if err := rows.Scan(
-			&i.FinalAlgoID,
-			&i.NumDependencies,
-			&i.AlgoIDPath,
-			&i.WindowTypeIDPath,
-			&i.ProcIDPath,
-			&i.LookbackCountPath,
-			&i.LookbackTimedeltaPath,
-			&i.SelfLookbackCountPath,
-			&i.SelfLookbackTimedeltaPath,
-			&i.LookbackGapCountPath,
-			&i.LookbackGapTimedeltaPath,
-			&i.SelfLookbackGapCountPath,
-			&i.SelfLookbackGapTimedeltaPath,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readAlgorithmId = `-- name: ReadAlgorithmId :one
-WITH processor_id AS (
-  SELECT p.id FROM processor p
-  WHERE p.name = $3
-  AND p.runtime = $4
-)
-SELECT a.id FROM algorithm a
-WHERE a.name = $1
-AND a.version = $2
-AND a.processor_id = (SELECT id from processor_id)
-`
-
-type ReadAlgorithmIdParams struct {
-	AlgorithmName    string
-	AlgorithmVersion string
-	ProcessorName    string
-	ProcessorRuntime string
-}
-
-func (q *Queries) ReadAlgorithmId(ctx context.Context, arg ReadAlgorithmIdParams) (int64, error) {
-	row := q.db.QueryRow(ctx, readAlgorithmId,
-		arg.AlgorithmName,
-		arg.AlgorithmVersion,
-		arg.ProcessorName,
-		arg.ProcessorRuntime,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
-const readAlgorithms = `-- name: ReadAlgorithms :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
-`
-
-func (q *Queries) ReadAlgorithms(ctx context.Context) ([]Algorithm, error) {
-	rows, err := q.db.Query(ctx, readAlgorithms)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Algorithm
-	for rows.Next() {
-		var i Algorithm
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Version,
-			&i.ProcessorID,
-			&i.WindowTypeID,
-			&i.ResultType,
-			&i.Created,
-			&i.Description,
-			&i.SelfLookbackCount,
-			&i.SelfLookbackTimedelta,
-			&i.SelfLookbackGapCount,
-			&i.SelfLookbackGapTimedelta,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readAlgorithmsForProcessorId = `-- name: ReadAlgorithmsForProcessorId :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
-WHERE a.processor_id = $1
-`
-
-func (q *Queries) ReadAlgorithmsForProcessorId(ctx context.Context, processorID int64) ([]Algorithm, error) {
-	rows, err := q.db.Query(ctx, readAlgorithmsForProcessorId, processorID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Algorithm
-	for rows.Next() {
-		var i Algorithm
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Version,
-			&i.ProcessorID,
-			&i.WindowTypeID,
-			&i.ResultType,
-			&i.Created,
-			&i.Description,
-			&i.SelfLookbackCount,
-			&i.SelfLookbackTimedelta,
-			&i.SelfLookbackGapCount,
-			&i.SelfLookbackGapTimedelta,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readAlgorithmsForWindow = `-- name: ReadAlgorithmsForWindow :many
-SELECT a.id, a.name, a.version, a.processor_id, a.window_type_id, a.result_type, a.created, a.description, a.self_lookback_count, a.self_lookback_timedelta, a.self_lookback_gap_count, a.self_lookback_gap_timedelta FROM algorithm a
-JOIN window_type wt ON a.window_type_id = wt.id
-WHERE wt.name = $1 
-AND wt.version = $2
-`
-
-type ReadAlgorithmsForWindowParams struct {
-	WindowTypeName    string
-	WindowTypeVersion string
-}
-
-func (q *Queries) ReadAlgorithmsForWindow(ctx context.Context, arg ReadAlgorithmsForWindowParams) ([]Algorithm, error) {
-	rows, err := q.db.Query(ctx, readAlgorithmsForWindow, arg.WindowTypeName, arg.WindowTypeVersion)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Algorithm
-	for rows.Next() {
-		var i Algorithm
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Version,
-			&i.ProcessorID,
-			&i.WindowTypeID,
-			&i.ResultType,
-			&i.Created,
-			&i.Description,
-			&i.SelfLookbackCount,
-			&i.SelfLookbackTimedelta,
-			&i.SelfLookbackGapCount,
-			&i.SelfLookbackGapTimedelta,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readFromAlgorithmDependencies = `-- name: ReadFromAlgorithmDependencies :many
-WITH from_algo AS (
-  SELECT a.id, a.window_type_id, a.processor_id FROM algorithm a
-  JOIN processor p ON a.processor_id = p.id
-  WHERE a.name = $1
-  AND a.version = $2
-  AND p.name = $3
-  AND p.runtime = $4
-)
-SELECT ad.id, ad.from_algorithm_id, ad.to_algorithm_id, ad.from_window_type_id, ad.to_window_type_id, ad.from_processor_id, ad.to_processor_id, ad.created, ad.lookback_count, ad.lookback_timedelta, ad.lookback_gap_count, ad.lookback_gap_timedelta FROM algorithm_dependency ad WHERE ad.from_algorithm_id = from_algo.id
-`
-
-type ReadFromAlgorithmDependenciesParams struct {
-	FromAlgorithmName    string
-	FromAlgorithmVersion string
-	FromProcessorName    string
-	FromProcessorRuntime string
-}
-
-func (q *Queries) ReadFromAlgorithmDependencies(ctx context.Context, arg ReadFromAlgorithmDependenciesParams) ([]AlgorithmDependency, error) {
-	rows, err := q.db.Query(ctx, readFromAlgorithmDependencies,
-		arg.FromAlgorithmName,
-		arg.FromAlgorithmVersion,
-		arg.FromProcessorName,
-		arg.FromProcessorRuntime,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AlgorithmDependency
-	for rows.Next() {
-		var i AlgorithmDependency
-		if err := rows.Scan(
-			&i.ID,
-			&i.FromAlgorithmID,
-			&i.ToAlgorithmID,
-			&i.FromWindowTypeID,
-			&i.ToWindowTypeID,
-			&i.FromProcessorID,
-			&i.ToProcessorID,
-			&i.Created,
-			&i.LookbackCount,
-			&i.LookbackTimedelta,
-			&i.LookbackGapCount,
-			&i.LookbackGapTimedelta,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readMetadataFields = `-- name: ReadMetadataFields :many
-SELECT id, name, description, filter FROM metadata_fields
-`
-
-func (q *Queries) ReadMetadataFields(ctx context.Context) ([]MetadataField, error) {
-	rows, err := q.db.Query(ctx, readMetadataFields)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []MetadataField
-	for rows.Next() {
-		var i MetadataField
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Description,
-			&i.Filter,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readMetadataFieldsByWindowType = `-- name: ReadMetadataFieldsByWindowType :many
-SELECT m.id, m.name, m.description, m.filter FROM 
-metadata_fields m
-JOIN metadata_fields_references ON m.id = metadata_fields_references.metadata_fields_id
-WHERE window_type_id = $1
-ORDER BY m.name
-`
-
-func (q *Queries) ReadMetadataFieldsByWindowType(ctx context.Context, windowTypeID int64) ([]MetadataField, error) {
-	rows, err := q.db.Query(ctx, readMetadataFieldsByWindowType, windowTypeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []MetadataField
-	for rows.Next() {
-		var i MetadataField
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Description,
-			&i.Filter,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readProcessorExcludeProject = `-- name: ReadProcessorExcludeProject :many
-SELECT id, name, runtime, connection_string, created, project_name FROM processor WHERE project_name != $1
-`
-
-func (q *Queries) ReadProcessorExcludeProject(ctx context.Context, projectName pgtype.Text) ([]Processor, error) {
-	rows, err := q.db.Query(ctx, readProcessorExcludeProject, projectName)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Processor
-	for rows.Next() {
-		var i Processor
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Runtime,
-			&i.ConnectionString,
-			&i.Created,
-			&i.ProjectName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readProcessors = `-- name: ReadProcessors :many
-SELECT id, name, runtime, connection_string, created, project_name FROM processor
-`
-
-func (q *Queries) ReadProcessors(ctx context.Context) ([]Processor, error) {
-	rows, err := q.db.Query(ctx, readProcessors)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Processor
-	for rows.Next() {
-		var i Processor
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Runtime,
-			&i.ConnectionString,
-			&i.Created,
-			&i.ProjectName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readProcessorsByIDs = `-- name: ReadProcessorsByIDs :many
-SELECT id, name, runtime, connection_string, created, project_name
-FROM processor
-WHERE id = ANY($1::bigint[])
-ORDER BY name, runtime
-`
-
-func (q *Queries) ReadProcessorsByIDs(ctx context.Context, processorIds []int64) ([]Processor, error) {
-	rows, err := q.db.Query(ctx, readProcessorsByIDs, processorIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Processor
-	for rows.Next() {
-		var i Processor
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Runtime,
-			&i.ConnectionString,
-			&i.Created,
-			&i.ProjectName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readResultsForAlgorithmByCount = `-- name: ReadResultsForAlgorithmByCount :many
-SELECT
-    r.id as result_id,
-    r.algorithm_id,
-    w.id as window_id,
-    a.result_type,
-    r.result_value, 
-    r.result_array,
-    r.result_json,
-    wt.name as window_type_name, 
-    wt.version as window_type_version,
-    w.time_from as window_time_from,
-    w.time_to as window_time_to,
-    w.origin as window_origin,
-    jsonb_object_agg(m.metadata_key, 
-        COALESCE(
-          to_jsonb(m.metadata_value),
-          to_jsonb(m.metadata_array),
-          m.metadata_json
-        )
-      ) AS window_metadata
-FROM results r
-JOIN windows w ON w.id = r.windows_id
-JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id
-JOIN metadata m ON m.windows_id = r.windows_id
+    used = TRUE
 WHERE
-    r.algorithm_id = $1
-    AND w.time_to < $2
-    AND r.state = 'SUCCEEDED'
-GROUP BY
-    r.id, r.algorithm_id, w.id, a.result_type,
-    r.result_value, r.result_array, r.result_json,
-    wt.name, wt.version, w.time_from, w.time_to, w.origin
-HAVING
-    -- No filter applied
-    (
-        $3::jsonb IS NULL
-    )
-    OR (
-        -- Every filter entry must be satisfied by some metadata row on this window
-        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
-        $3::jsonb IS NOT NULL
-        AND NOT EXISTS (
-            -- Check that no filter goes unsatisfied
-            SELECT 1
-            FROM jsonb_array_elements($3::jsonb) AS f
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM metadata m2
-                WHERE m2.windows_id = r.windows_id
-                  AND m2.metadata_key = f->>'key'
-                  AND (
-                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
-                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
-                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
-                  )
-            )
-        )
-    )
-ORDER BY w.time_from, w.time_to DESC
-LIMIT $5
-OFFSET $4
+    nonce = $1
+    AND worker_id = $2
+    AND used = FALSE
+    AND expires_at > now()
+RETURNING
+    id,
+    worker_id
 `
 
-type ReadResultsForAlgorithmByCountParams struct {
-	AlgorithmID     pgtype.Int8
-	SearchTo        pgtype.Timestamp
-	MetadataFilters []byte
-	CountOffset     int32
-	Limit           pgtype.Int4
+type ConsumeNonceParams struct {
+	Nonce    []byte
+	WorkerID pgtype.UUID
 }
 
-type ReadResultsForAlgorithmByCountRow struct {
-	ResultID          int64
-	AlgorithmID       pgtype.Int8
-	WindowID          int64
-	ResultType        ResultType
-	ResultValue       pgtype.Float8
-	ResultArray       []float64
-	ResultJson        []byte
-	WindowTypeName    string
-	WindowTypeVersion string
-	WindowTimeFrom    pgtype.Timestamp
-	WindowTimeTo      pgtype.Timestamp
-	WindowOrigin      string
-	WindowMetadata    []byte
+type ConsumeNonceRow struct {
+	ID       pgtype.UUID
+	WorkerID pgtype.UUID
 }
 
-func (q *Queries) ReadResultsForAlgorithmByCount(ctx context.Context, arg ReadResultsForAlgorithmByCountParams) ([]ReadResultsForAlgorithmByCountRow, error) {
-	rows, err := q.db.Query(ctx, readResultsForAlgorithmByCount,
-		arg.AlgorithmID,
-		arg.SearchTo,
-		arg.MetadataFilters,
-		arg.CountOffset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ReadResultsForAlgorithmByCountRow
-	for rows.Next() {
-		var i ReadResultsForAlgorithmByCountRow
-		if err := rows.Scan(
-			&i.ResultID,
-			&i.AlgorithmID,
-			&i.WindowID,
-			&i.ResultType,
-			&i.ResultValue,
-			&i.ResultArray,
-			&i.ResultJson,
-			&i.WindowTypeName,
-			&i.WindowTypeVersion,
-			&i.WindowTimeFrom,
-			&i.WindowTimeTo,
-			&i.WindowOrigin,
-			&i.WindowMetadata,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readResultsForAlgorithmByTimedelta = `-- name: ReadResultsForAlgorithmByTimedelta :many
-SELECT
-    r.id as result_id,
-    r.algorithm_id,
-    w.id as window_id,
-    a.result_type,
-    r.result_value, 
-    r.result_array,
-    r.result_json,
-    wt.name as window_type_name, 
-    wt.version as window_type_version,
-    w.time_from as window_time_from,
-    w.time_to as window_time_to,
-    w.origin as window_origin,
-    jsonb_object_agg(m.metadata_key,
-        COALESCE(
-          to_jsonb(m.metadata_value),
-          to_jsonb(m.metadata_array),
-          m.metadata_json
-        )
-      ) AS window_metadata
-FROM results r
-JOIN windows w ON w.id = r.windows_id
-JOIN window_type wt ON wt.id = w.window_type_id
-JOIN algorithm a ON a.id = r.algorithm_id
-JOIN metadata m ON m.windows_id = r.windows_id
-WHERE
-    r.algorithm_id = $1
-    AND w.time_from > $2
-    AND w.time_to < $3
-    AND r.state = 'SUCCEEDED'
-GROUP BY
-    r.id, r.algorithm_id, w.id, a.result_type,
-    r.result_value, r.result_array, r.result_json,
-    wt.name, wt.version, w.time_from, w.time_to, w.origin
-HAVING
-    -- No filter applied
-    (
-        $4::jsonb IS NULL
-    )
-    OR (
-        -- Every filter entry must be satisfied by some metadata row on this window
-        -- filters shape: [{"key": "k1", "value": "v1"}, {"key": "k2", "array": ["a","b"]}, {"key": "k3", "struct": {"x": 1}}]
-        $4::jsonb IS NOT NULL
-        AND NOT EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements($4::jsonb) AS f
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM metadata m2
-                WHERE m2.windows_id = r.windows_id
-                  AND m2.metadata_key = f->>'key'
-                  AND (
-                      (f->>'value' IS NOT NULL AND m2.metadata_value = (f->>'value')::float8)
-                      OR (f->'array' IS NOT NULL AND m2.metadata_array @> ARRAY(SELECT jsonb_array_elements_text(f->'array'))::float8[])
-                      OR (f->'struct' IS NOT NULL AND m2.metadata_json @> (f->'struct'))
-                  )
-            )
-        )
-    )
-ORDER BY w.time_from, w.time_to DESC
-LIMIT $6
-OFFSET $5
-`
-
-type ReadResultsForAlgorithmByTimedeltaParams struct {
-	AlgorithmID     pgtype.Int8
-	SearchFrom      pgtype.Timestamp
-	SearchTo        pgtype.Timestamp
-	MetadataFilters []byte
-	CountOffset     int32
-	Limit           pgtype.Int4
-}
-
-type ReadResultsForAlgorithmByTimedeltaRow struct {
-	ResultID          int64
-	AlgorithmID       pgtype.Int8
-	WindowID          int64
-	ResultType        ResultType
-	ResultValue       pgtype.Float8
-	ResultArray       []float64
-	ResultJson        []byte
-	WindowTypeName    string
-	WindowTypeVersion string
-	WindowTimeFrom    pgtype.Timestamp
-	WindowTimeTo      pgtype.Timestamp
-	WindowOrigin      string
-	WindowMetadata    []byte
-}
-
-func (q *Queries) ReadResultsForAlgorithmByTimedelta(ctx context.Context, arg ReadResultsForAlgorithmByTimedeltaParams) ([]ReadResultsForAlgorithmByTimedeltaRow, error) {
-	rows, err := q.db.Query(ctx, readResultsForAlgorithmByTimedelta,
-		arg.AlgorithmID,
-		arg.SearchFrom,
-		arg.SearchTo,
-		arg.MetadataFilters,
-		arg.CountOffset,
-		arg.Limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ReadResultsForAlgorithmByTimedeltaRow
-	for rows.Next() {
-		var i ReadResultsForAlgorithmByTimedeltaRow
-		if err := rows.Scan(
-			&i.ResultID,
-			&i.AlgorithmID,
-			&i.WindowID,
-			&i.ResultType,
-			&i.ResultValue,
-			&i.ResultArray,
-			&i.ResultJson,
-			&i.WindowTypeName,
-			&i.WindowTypeVersion,
-			&i.WindowTimeFrom,
-			&i.WindowTimeTo,
-			&i.WindowOrigin,
-			&i.WindowMetadata,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readWindowTypeMetadataFields = `-- name: ReadWindowTypeMetadataFields :many
-SELECT window_type_name, window_type_version, metadata_field_id, metadata_field_name, metadata_field_description FROM window_type_metadata_fields
-`
-
-func (q *Queries) ReadWindowTypeMetadataFields(ctx context.Context) ([]WindowTypeMetadataField, error) {
-	rows, err := q.db.Query(ctx, readWindowTypeMetadataFields)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []WindowTypeMetadataField
-	for rows.Next() {
-		var i WindowTypeMetadataField
-		if err := rows.Scan(
-			&i.WindowTypeName,
-			&i.WindowTypeVersion,
-			&i.MetadataFieldID,
-			&i.MetadataFieldName,
-			&i.MetadataFieldDescription,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readWindowTypes = `-- name: ReadWindowTypes :many
-SELECT wt.id, wt.name, wt.version, wt.description, wt.created FROM window_type wt
-`
-
-func (q *Queries) ReadWindowTypes(ctx context.Context) ([]WindowType, error) {
-	rows, err := q.db.Query(ctx, readWindowTypes)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []WindowType
-	for rows.Next() {
-		var i WindowType
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Version,
-			&i.Description,
-			&i.Created,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const readWindowTypesByName = `-- name: ReadWindowTypesByName :many
-SELECT wt.id, wt.name, wt.version, wt.description, wt.created FROM window_type wt
-WHERE wt.name = $1 AND wt.version = $2
-`
-
-type ReadWindowTypesByNameParams struct {
-	Name    string
-	Version string
-}
-
-func (q *Queries) ReadWindowTypesByName(ctx context.Context, arg ReadWindowTypesByNameParams) ([]WindowType, error) {
-	rows, err := q.db.Query(ctx, readWindowTypesByName, arg.Name, arg.Version)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []WindowType
-	for rows.Next() {
-		var i WindowType
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Version,
-			&i.Description,
-			&i.Created,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const registerMetadata = `-- name: RegisterMetadata :exec
-INSERT INTO metadata (
-  windows_id,
-  window_type_id,
-  metadata_key,
-  metadata_value,
-  metadata_array,
-  metadata_json
-) VALUES (
-  $1,
-  $2,
-  $3,
-  $4,
-  $5,
-  $6
-) ON CONFLICT (windows_id, window_type_id, metadata_key) DO UPDATE
-SET
-  metadata_value = EXCLUDED.metadata_value,
-  metadata_array = EXCLUDED.metadata_array,
-  metadata_json  = EXCLUDED.metadata_json
-`
-
-type RegisterMetadataParams struct {
-	WindowsID     int64
-	WindowTypeID  int64
-	MetadataKey   string
-	MetadataValue pgtype.Float8
-	MetadataArray []float64
-	MetadataJson  []byte
-}
-
-func (q *Queries) RegisterMetadata(ctx context.Context, arg RegisterMetadataParams) error {
-	_, err := q.db.Exec(ctx, registerMetadata,
-		arg.WindowsID,
-		arg.WindowTypeID,
-		arg.MetadataKey,
-		arg.MetadataValue,
-		arg.MetadataArray,
-		arg.MetadataJson,
-	)
-	return err
-}
-
-const registerWindow = `-- name: RegisterWindow :one
-WITH window_type_id AS (
-  SELECT id FROM window_type 
-  WHERE name = $4 
-  AND version = $5
-)
-INSERT INTO windows (
-  window_type_id,
-  time_from, 
-  time_to,
-  origin
-) VALUES (
-  (SELECT id FROM window_type_id),
-  $1,
-  $2,
-  $3
-) RETURNING window_type_id, id
-`
-
-type RegisterWindowParams struct {
-	TimeFrom          pgtype.Timestamp
-	TimeTo            pgtype.Timestamp
-	Origin            string
-	WindowTypeName    string
-	WindowTypeVersion string
-}
-
-type RegisterWindowRow struct {
-	WindowTypeID int64
-	ID           int64
-}
-
-func (q *Queries) RegisterWindow(ctx context.Context, arg RegisterWindowParams) (RegisterWindowRow, error) {
-	row := q.db.QueryRow(ctx, registerWindow,
-		arg.TimeFrom,
-		arg.TimeTo,
-		arg.Origin,
-		arg.WindowTypeName,
-		arg.WindowTypeVersion,
-	)
-	var i RegisterWindowRow
-	err := row.Scan(&i.WindowTypeID, &i.ID)
+func (q *Queries) ConsumeNonce(ctx context.Context, arg ConsumeNonceParams) (ConsumeNonceRow, error) {
+	row := q.db.QueryRow(ctx, consumeNonce, arg.Nonce, arg.WorkerID)
+	var i ConsumeNonceRow
+	err := row.Scan(&i.ID, &i.WorkerID)
 	return i, err
 }
 
-const updateResultState = `-- name: UpdateResultState :exec
-UPDATE results SET state = $1 WHERE id = $2
+const createNonce = `-- name: CreateNonce :one
+INSERT INTO worker_nonce (worker_id, nonce)
+    VALUES ($1, $2)
+RETURNING
+    id, nonce, expires_at
 `
 
-type UpdateResultStateParams struct {
-	State    AlgorithmState
-	ResultID int64
+type CreateNonceParams struct {
+	WorkerID pgtype.UUID
+	Nonce    []byte
 }
 
-func (q *Queries) UpdateResultState(ctx context.Context, arg UpdateResultStateParams) error {
-	_, err := q.db.Exec(ctx, updateResultState, arg.State, arg.ResultID)
+type CreateNonceRow struct {
+	ID        pgtype.UUID
+	Nonce     []byte
+	ExpiresAt pgtype.Timestamptz
+}
+
+// ============================================================
+// Nonce
+// ============================================================
+func (q *Queries) CreateNonce(ctx context.Context, arg CreateNonceParams) (CreateNonceRow, error) {
+	row := q.db.QueryRow(ctx, createNonce, arg.WorkerID, arg.Nonce)
+	var i CreateNonceRow
+	err := row.Scan(&i.ID, &i.Nonce, &i.ExpiresAt)
+	return i, err
+}
+
+const createSession = `-- name: CreateSession :one
+INSERT INTO worker_session (worker_id, access_key, expires_at)
+    VALUES ($1, $2, $3)
+RETURNING
+    id, access_key, expires_at
+`
+
+type CreateSessionParams struct {
+	WorkerID  pgtype.UUID
+	AccessKey []byte
+	ExpiresAt pgtype.Timestamptz
+}
+
+type CreateSessionRow struct {
+	ID        pgtype.UUID
+	AccessKey []byte
+	ExpiresAt pgtype.Timestamptz
+}
+
+// ============================================================
+// Session
+// ============================================================
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error) {
+	row := q.db.QueryRow(ctx, createSession, arg.WorkerID, arg.AccessKey, arg.ExpiresAt)
+	var i CreateSessionRow
+	err := row.Scan(&i.ID, &i.AccessKey, &i.ExpiresAt)
+	return i, err
+}
+
+const deleteExpiredNonces = `-- name: DeleteExpiredNonces :exec
+DELETE FROM worker_nonce
+WHERE expires_at < now()
+`
+
+func (q *Queries) DeleteExpiredNonces(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredNonces)
 	return err
 }
 
-const updateWindowState = `-- name: UpdateWindowState :exec
-UPDATE windows SET state = $1 WHERE id = $2
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+DELETE FROM worker_session
+WHERE expires_at < now()
 `
 
-type UpdateWindowStateParams struct {
-	State    WindowState
-	WindowID int64
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredSessions)
+	return err
 }
 
-func (q *Queries) UpdateWindowState(ctx context.Context, arg UpdateWindowStateParams) error {
-	_, err := q.db.Exec(ctx, updateWindowState, arg.State, arg.WindowID)
+const getSession = `-- name: GetSession :one
+SELECT
+    id,
+    worker_id,
+    expires_at
+FROM
+    worker_session
+WHERE
+    access_key = $1
+    AND revoked = FALSE
+    AND expires_at > now()
+`
+
+type GetSessionRow struct {
+	ID        pgtype.UUID
+	WorkerID  pgtype.UUID
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetSession(ctx context.Context, accessKey []byte) (GetSessionRow, error) {
+	row := q.db.QueryRow(ctx, getSession, accessKey)
+	var i GetSessionRow
+	err := row.Scan(&i.ID, &i.WorkerID, &i.ExpiresAt)
+	return i, err
+}
+
+const getWorkerByID = `-- name: GetWorkerByID :one
+SELECT
+    id,
+    public_key,
+    connection_url,
+    is_serving,
+    created_at
+FROM
+    worker
+WHERE
+    id = $1
+`
+
+func (q *Queries) GetWorkerByID(ctx context.Context, id pgtype.UUID) (Worker, error) {
+	row := q.db.QueryRow(ctx, getWorkerByID, id)
+	var i Worker
+	err := row.Scan(
+		&i.ID,
+		&i.PublicKey,
+		&i.ConnectionUrl,
+		&i.IsServing,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const registerWorker = `-- name: RegisterWorker :one
+INSERT INTO worker (public_key, connection_url)
+    VALUES ($1, $2)
+RETURNING
+    id
+`
+
+type RegisterWorkerParams struct {
+	PublicKey     string
+	ConnectionUrl string
+}
+
+// ============================================================
+// Worker
+// ============================================================
+func (q *Queries) RegisterWorker(ctx context.Context, arg RegisterWorkerParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, registerWorker, arg.PublicKey, arg.ConnectionUrl)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const revokeSession = `-- name: RevokeSession :exec
+UPDATE
+    worker_session
+SET
+    revoked = TRUE
+WHERE
+    access_key = $1
+`
+
+func (q *Queries) RevokeSession(ctx context.Context, accessKey []byte) error {
+	_, err := q.db.Exec(ctx, revokeSession, accessKey)
+	return err
+}
+
+const setWorkerServing = `-- name: SetWorkerServing :exec
+UPDATE
+    worker
+SET
+    is_serving = $1
+WHERE
+    id = $2
+`
+
+type SetWorkerServingParams struct {
+	IsServing bool
+	ID        pgtype.UUID
+}
+
+func (q *Queries) SetWorkerServing(ctx context.Context, arg SetWorkerServingParams) error {
+	_, err := q.db.Exec(ctx, setWorkerServing, arg.IsServing, arg.ID)
 	return err
 }

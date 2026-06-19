@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -12,7 +14,7 @@ type Config struct {
 	ConnectionString string
 	Port             int
 	Platform         string
-	LogLevel         string
+	LogLevel         slog.Leveler
 }
 
 var (
@@ -44,9 +46,20 @@ func loadConfig() *Config {
 		}
 	}
 
-	config.LogLevel = "INFO"
 	if logLevel := os.Getenv("ORCA_LOG_LEVEL"); logLevel != "" {
-		config.LogLevel = strings.ToUpper(logLevel)
+		switch strings.ToLower(logLevel) {
+		case "debug":
+			config.LogLevel = slog.LevelDebug
+		case "info":
+			config.LogLevel = slog.LevelInfo
+		case "warn":
+			config.LogLevel = slog.LevelWarn
+		case "error":
+			config.LogLevel = slog.LevelError
+		default:
+			slog.Error(fmt.Sprintf("log level %v not valid. valid options are debug, info, warn, and error", logLevel))
+			os.Exit(1)
+		}
 	}
 
 	config.Platform = inferPlatformFromConnectionString(config.ConnectionString)

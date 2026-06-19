@@ -2,18 +2,23 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 
-	"buf.build/go/protovalidate"
+	"github.com/jackc/pgx/v5/pgconn"
 	pb "github.com/orca-telemetry/contract/go/v2"
-	"github.com/orca-telemetry/core/internal/db"
-	"google.golang.org/protobuf/proto"
+	db "github.com/orca-telemetry/core/internal/db"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type (
 	CoreServer struct {
 		pb.UnimplementedCoreServer
-		client *db.Datalayer
+		db *db.DB
 	}
 )
 
@@ -21,12 +26,42 @@ var (
 	MAX_PROCESSORS = 20
 )
 
-// NewServer produces a new ORCA gRPC server
+func AuthInterceptor(
+	ctx context.Context,
+	req any,
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (any, error) {
+	// allow unathenticated access to core to this endpoint
+	if info.FullMethod == "/Core/RegisterWorker" {
+		return handler(ctx, req)
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	vals := md.Get("authorization")
+	if len(vals) == 0 {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+	}
+
+	token := vals[0] // e.g. "Bearer <token>"
+
+	// TODO: Check the authentication against the nonce's
+
+	// Validate token, add claims to context, etc.
+	ctx = context.WithValue(ctx, ctxKeyUser{}, token)
+
+	return handler(ctx, req) // call the actual handler
+}
+
+// NewServer produces a new core gRPC server
 func NewServer(
 	ctx context.Context,
 	connStr string,
 ) (*CoreServer, error) {
-	client, err := db.NewClient(ctx, connStr)
+	DB, err := db.NewDbQueries(ctx, connStr)
 	if err != nil {
 		slog.Error(
 			"could not initialise client",
@@ -37,73 +72,42 @@ func NewServer(
 		return nil, err
 	}
 
-	s := &OrcaCoreServer{
-		client: client,
+	s := &CoreServer{
+		db: DB,
 	}
 	return s, nil
 }
 
-// validate a protobuf via protovalidate
-func validate[T proto.Message](msg T) error {
-	v, err := protovalidate.New()
-	if err != nil {
-		return err
-	}
-
-	if err := v.Validate(msg); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // --------------------------- gRPC Services ---------------------------
-// -------------------------- Core Operations --------------------------
-// Register a processor with orca-core. Called when a processor startsup.
-func (o *OrcaCoreServer) RegisterProcessor(
-	ctx context.Context,
-	proc *pb.ProcessorRegistration,
-) (*pb.Status, error) {
-	err := validate(proc)
+
+// Register a worker, returns worker ID or an error on public key conflict
+func (c *CoreServer) RegisterWorker(ctx context.Context, w *pb.RegisterWorkerRequest) (string, error) {
+	tx, err := c.db.BeginTx(ctx)
 	if err != nil {
-		return nil, err
+		slog.Error("could not start a transaction with the DB", "error", err)
+		return "", err
 	}
-	slog.Info("registering processor")
-	err = o.client.RegisterProcessor(ctx, proc)
+	defer tx.Rollback(ctx)
+	qtx := c.db.WithTx(tx)
+
+	worker_uuid, err := qtx.RegisterWorker(ctx, db.RegisterWorkerParams{
+		PublicKey: w.GetPublicKey(),
+	})
 	if err != nil {
-		return nil, err
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == db.PgUniqueViolation {
+				return "", db.ErrWorkerAlreadyExists
+			}
+			return "", fmt.Errorf("unknown postgres error: %w", err)
+		}
+		return "", fmt.Errorf("unknown error occurred: %w", err)
 	}
-	slog.Debug("registered processor", "processor", proc)
-	return &pb.Status{
-		Received: true,
-		Message:  "Successfully registered processor",
-	}, nil
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return worker_uuid.String(), nil
 }
 
-func (o *OrcaCoreServer) EmitWindow(
-	ctx context.Context,
-	window *pb.Window,
-) (*pb.WindowEmitStatus, error) {
-	slog.Debug("Recieved Window", "window", window)
-	err := validate(window)
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("emitting window", "window", window)
-	config := GetConfig()
-	windowEmitStatus, err := o.client.EmitWindow(ctx, window, config.IsProduction)
-	return &windowEmitStatus, err
-}
-
-func (o *OrcaCoreServer) Expose(
-	ctx context.Context,
-	settings *pb.ExposeSettings,
-) (*pb.InternalState, error) {
-	slog.Debug("recieved request to expose internal state", "settings", settings)
-	err := validate(settings)
-	if err != nil {
-		return nil, err
-	}
-	internalState, err := o.client.Expose(ctx, settings)
-	return internalState, err
+func (c *CoreServer) GetNonce(context.Context, *GetNonceRequest) (*GetNonceResponse, error) {
 }

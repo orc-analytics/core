@@ -57,6 +57,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// configure logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: config.LogLevel,
+	}))
+	slog.SetDefault(logger)
+
 	if err := startGRPCServer(ctx, config.ConnectionString, config.Port); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)

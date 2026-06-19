@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -9,6 +10,10 @@ var (
 	AlgorithmExistsUnderDifferentProcessor = fmt.Errorf(
 		"algorithm exists under a different processor",
 	)
+)
+
+var (
+	ErrWorkerAlreadyExists = errors.New("worker already exists")
 )
 
 type CircularDependencyError struct {

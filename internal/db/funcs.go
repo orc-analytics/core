@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -11,15 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	pb "github.com/orca-telemetry/contract/go/v2"
 )
-
-type Datalayer struct {
-	queries *Queries
-	conn    *pgxpool.Pool
-	closeFn func()
-}
 
 type PgTx struct {
 	tx pgx.Tx
@@ -31,25 +23,6 @@ func (t *PgTx) Rollback(ctx context.Context) {
 
 func (t *PgTx) Commit(ctx context.Context) error {
 	return t.tx.Commit(ctx)
-}
-
-// generate a new client for the postgres datalayer
-func NewClient(ctx context.Context, connStr string) (*Datalayer, error) {
-	if connStr == "" {
-		return nil, errors.New("connection string empty")
-	}
-
-	connPool, err := pgxpool.New(ctx, connStr)
-	if err != nil {
-		slog.Error("Issue connecting to postgres", "error", err)
-		return nil, err
-	}
-
-	return &Datalayer{
-		queries: New(connPool),
-		conn:    connPool,
-		closeFn: connPool.Close,
-	}, nil
 }
 
 func (d *Datalayer) createProcessor(
