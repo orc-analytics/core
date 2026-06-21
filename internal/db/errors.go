@@ -1,7 +1,6 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -13,7 +12,15 @@ var (
 )
 
 var (
-	ErrWorkerAlreadyExists = errors.New("worker already exists")
+	ErrWorkerAlreadyExists = "worker already exists"
+	ErrWorkerNotFound      = "worker is not found"
+	ErrBadWorkerId         = "worker Id is malformed"
+	ErrBadNonceId          = "nonce Id is malformed"
+	ErrNonceNotFound       = "nonce not found"
+	ErrBadSignature        = "signature provided is bad"
+	ErrBadPublicKey        = "public key is malformed. must be ed25519"
+	ErrDatabase            = func(err error) string { return fmt.Sprintf("database error: %v", err.Error()) }
+	ErrServer              = func(err error) string { return fmt.Sprintf("server error: %v", err.Error()) }
 )
 
 type CircularDependencyError struct {

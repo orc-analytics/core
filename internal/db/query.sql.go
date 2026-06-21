@@ -11,35 +11,55 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkWorkerExistsById = `-- name: CheckWorkerExistsById :one
+SELECT
+    EXISTS (
+        SELECT
+            1
+        FROM
+            worker
+        WHERE
+            id = $1)
+`
+
+func (q *Queries) CheckWorkerExistsById(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, checkWorkerExistsById, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const consumeNonce = `-- name: ConsumeNonce :one
 UPDATE
     worker_nonce
 SET
     used = TRUE
 WHERE
-    nonce = $1
-    AND worker_id = $2
+    worker_id = $1
+    AND id = $2
     AND used = FALSE
     AND expires_at > now()
 RETURNING
     id,
+    nonce,
     worker_id
 `
 
 type ConsumeNonceParams struct {
-	Nonce    []byte
 	WorkerID pgtype.UUID
+	NonceID  pgtype.UUID
 }
 
 type ConsumeNonceRow struct {
 	ID       pgtype.UUID
+	Nonce    []byte
 	WorkerID pgtype.UUID
 }
 
 func (q *Queries) ConsumeNonce(ctx context.Context, arg ConsumeNonceParams) (ConsumeNonceRow, error) {
-	row := q.db.QueryRow(ctx, consumeNonce, arg.Nonce, arg.WorkerID)
+	row := q.db.QueryRow(ctx, consumeNonce, arg.WorkerID, arg.NonceID)
 	var i ConsumeNonceRow
-	err := row.Scan(&i.ID, &i.WorkerID)
+	err := row.Scan(&i.ID, &i.Nonce, &i.WorkerID)
 	return i, err
 }
 
@@ -180,7 +200,7 @@ RETURNING
 `
 
 type RegisterWorkerParams struct {
-	PublicKey     string
+	PublicKey     []byte
 	ConnectionUrl string
 }
 

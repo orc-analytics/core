@@ -7,7 +7,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.18.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.2
-	github.com/orca-telemetry/contract/go/v2 v2.0.0-e7d1d9e
+	github.com/orca-telemetry/contract/go/v2 v2.0.0-413d517
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.39.0
 	gonum.org/v1/gonum v0.17.0

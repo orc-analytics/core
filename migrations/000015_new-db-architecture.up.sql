@@ -73,7 +73,7 @@ CREATE TYPE failure_category AS ENUM (
 -- are owned by
 CREATE TABLE worker (
     id uuid DEFAULT gen_random_uuid () PRIMARY KEY,
-    public_key text NOT NULL,
+    public_key bytea NOT NULL CHECK (length(public_key) = 32),
     connection_url text NOT NULL,
     is_serving boolean NOT NULL DEFAULT FALSE,
     created_at timestamptz NOT NULL DEFAULT now(),

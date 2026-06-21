@@ -19,6 +19,16 @@ FROM
 WHERE
     id = @id;
 
+-- name: CheckWorkerExistsById :one
+SELECT
+    EXISTS (
+        SELECT
+            1
+        FROM
+            worker
+        WHERE
+            id = @id);
+
 -- name: SetWorkerServing :exec
 UPDATE
     worker
@@ -42,12 +52,13 @@ UPDATE
 SET
     used = TRUE
 WHERE
-    nonce = @nonce
-    AND worker_id = @worker_id
+    worker_id = @worker_id
+    AND id = @nonce_id
     AND used = FALSE
     AND expires_at > now()
 RETURNING
     id,
+    nonce,
     worker_id;
 
 -- name: DeleteExpiredNonces :exec

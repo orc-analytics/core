@@ -745,7 +745,7 @@ type WindowTypeMetadataField struct {
 
 type Worker struct {
 	ID            pgtype.UUID
-	PublicKey     string
+	PublicKey     []byte
 	ConnectionUrl string
 	IsServing     bool
 	CreatedAt     pgtype.Timestamptz
@@ -756,6 +756,7 @@ type WorkerNonce struct {
 	WorkerID  pgtype.UUID
 	Nonce     []byte
 	ExpiresAt pgtype.Timestamptz
+	CreatedAt pgtype.Timestamptz
 	Used      bool
 }
 
