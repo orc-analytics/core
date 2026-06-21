@@ -27,8 +27,27 @@ type (
 )
 
 var (
-	MAX_PROCESSORS = 20
+	// how many times should we retry generating a random key that
+	// clashes with unique constraint in DB?
+	RANDOM_KEY_MAX_RETRIES = 5
 )
+
+// performs a retry of a DB query when a unique violation is reached
+// useful for when random keys are being generated
+func retryOnUniqueViolation[T any](attempts int, fn func() (T, error)) (T, error) {
+	var zero T
+	for range attempts {
+		result, err := fn()
+		if err == nil {
+			return result, nil
+		}
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != db.PgUniqueViolation {
+			return zero, status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+	}
+	return zero, status.Error(codes.ResourceExhausted, "max retries exceeded on unique violation")
+}
 
 // TODO: Pick out the access code from within here.
 func AuthInterceptor(
@@ -144,16 +163,22 @@ func (c *CoreServer) GetNonce(ctx context.Context, n *pb.GetNonceRequest) (*pb.G
 		return nil, status.Error(codes.NotFound, db.ErrWorkerNotFound)
 	}
 
-	nonce := make([]byte, 32)
-	if _, err = rand.Read(nonce); err != nil {
-		return nil, status.Error(codes.Internal, db.ErrServer(err))
+	nonceRow, err := retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateNonceRow, error) {
+		nonce := make([]byte, 32)
+		if _, err = rand.Read(nonce); err != nil {
+			return db.CreateNonceRow{}, status.Error(codes.Internal, db.ErrServer(err))
+		}
+		return qtx.CreateNonce(ctx, db.CreateNonceParams{
+			WorkerID: workerId,
+			Nonce:    nonce,
+		})
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	nonceRow, err := qtx.CreateNonce(ctx, db.CreateNonceParams{
-		WorkerID: workerId,
-		Nonce:    nonce,
-	})
-	if err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
 	}
 
@@ -207,16 +232,18 @@ func (c *CoreServer) CheckNonce(ctx context.Context, n *pb.CheckNonceRequest) (*
 	}
 
 	// issue access key
-	accessKey := make([]byte, 32)
-	if _, err = rand.Read(accessKey); err != nil {
-		return nil, status.Error(codes.Internal, db.ErrServer(err))
-	}
-	sessionRow, err := qtx.CreateSession(ctx, db.CreateSessionParams{
-		WorkerID:  workerId,
-		AccessKey: accessKey,
+	sessionRow, err := retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateSessionRow, error) {
+		accessKey := make([]byte, 32)
+		if _, err = rand.Read(accessKey); err != nil {
+			return db.CreateSessionRow{}, status.Error(codes.Internal, db.ErrServer(err))
+		}
+		return qtx.CreateSession(ctx, db.CreateSessionParams{
+			WorkerID:  workerId,
+			AccessKey: accessKey,
+		})
 	})
 	if err != nil {
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
