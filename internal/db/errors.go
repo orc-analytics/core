@@ -22,6 +22,7 @@ var (
 	ErrBadPublicKey              = "public key is malformed. must be ed25519"
 	ErrDatabase                  = func(err error) string { return fmt.Sprintf("database error: %v", err.Error()) }
 	ErrServer                    = func(err error) string { return fmt.Sprintf("server error: %v", err.Error()) }
+	ErrBadArgument               = func(errMsg string) string { return fmt.Sprintf("bad input argument: %w", errMsg) }
 )
 
 type CircularDependencyError struct {

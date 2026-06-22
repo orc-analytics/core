@@ -63,11 +63,70 @@ func (q *Queries) ConsumeNonce(ctx context.Context, arg ConsumeNonceParams) (Con
 	return i, err
 }
 
+const createDataFunction = `-- name: CreateDataFunction :exec
+INSERT INTO data_function (
+    name,
+    ast_hash,
+    git_commit_hash,
+    worker_id,
+    output_model,
+    is_active,
+    input_model,
+    execution_timeout_seconds,
+    ttl_seconds)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9)
+`
+
+type CreateDataFunctionParams struct {
+	Name                    string
+	AstHash                 string
+	GitCommitHash           string
+	WorkerID                pgtype.UUID
+	OutputModel             []byte
+	IsActive                pgtype.Bool
+	InputModel              []byte
+	ExecutionTimeoutSeconds pgtype.Int4
+	TtlSeconds              pgtype.Int4
+}
+
+// ============================================================
+// Data Functions
+// ============================================================
+func (q *Queries) CreateDataFunction(ctx context.Context, arg CreateDataFunctionParams) error {
+	_, err := q.db.Exec(ctx, createDataFunction,
+		arg.Name,
+		arg.AstHash,
+		arg.GitCommitHash,
+		arg.WorkerID,
+		arg.OutputModel,
+		arg.IsActive,
+		arg.InputModel,
+		arg.ExecutionTimeoutSeconds,
+		arg.TtlSeconds,
+	)
+	return err
+}
+
 const createNonce = `-- name: CreateNonce :one
-INSERT INTO worker_nonce (worker_id, nonce)
-    VALUES ($1, $2)
+INSERT INTO worker_nonce (
+    worker_id,
+    nonce)
+VALUES (
+    $1,
+    $2)
 RETURNING
-    id, nonce, expires_at
+    id,
+    nonce,
+    expires_at
 `
 
 type CreateNonceParams struct {
@@ -92,10 +151,18 @@ func (q *Queries) CreateNonce(ctx context.Context, arg CreateNonceParams) (Creat
 }
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO worker_session (worker_id, access_key, expires_at)
-    VALUES ($1, $2, $3)
+INSERT INTO worker_session (
+    worker_id,
+    access_key,
+    expires_at)
+VALUES (
+    $1,
+    $2,
+    $3)
 RETURNING
-    id, access_key, expires_at
+    id,
+    access_key,
+    expires_at
 `
 
 type CreateSessionParams struct {
@@ -118,6 +185,71 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (C
 	var i CreateSessionRow
 	err := row.Scan(&i.ID, &i.AccessKey, &i.ExpiresAt)
 	return i, err
+}
+
+const createTask = `-- name: CreateTask :exec
+INSERT INTO task (
+    name,
+    ast_hash,
+    worker_id,
+    description,
+    execution_timeout,
+    deadline,
+    retry_count,
+    backoff_strategy,
+    input_model,
+    output_model,
+    git_commit_hash,
+    is_active)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12)
+`
+
+type CreateTaskParams struct {
+	Name             string
+	AstHash          string
+	WorkerID         pgtype.UUID
+	Description      string
+	ExecutionTimeout pgtype.Int4
+	Deadline         pgtype.Int4
+	RetryCount       pgtype.Int4
+	BackoffStrategy  NullBackoffStrategy
+	InputModel       []byte
+	OutputModel      []byte
+	GitCommitHash    string
+	IsActive         pgtype.Bool
+}
+
+// ============================================================
+// Task
+// ============================================================
+func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
+	_, err := q.db.Exec(ctx, createTask,
+		arg.Name,
+		arg.AstHash,
+		arg.WorkerID,
+		arg.Description,
+		arg.ExecutionTimeout,
+		arg.Deadline,
+		arg.RetryCount,
+		arg.BackoffStrategy,
+		arg.InputModel,
+		arg.OutputModel,
+		arg.GitCommitHash,
+		arg.IsActive,
+	)
+	return err
 }
 
 const deleteExpiredNonces = `-- name: DeleteExpiredNonces :exec
@@ -193,8 +325,12 @@ func (q *Queries) GetWorkerByID(ctx context.Context, id pgtype.UUID) (Worker, er
 }
 
 const registerWorker = `-- name: RegisterWorker :one
-INSERT INTO worker (public_key, connection_url)
-    VALUES ($1, $2)
+INSERT INTO worker (
+    public_key,
+    connection_url)
+VALUES (
+    $1,
+    $2)
 RETURNING
     id
 `

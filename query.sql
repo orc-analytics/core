@@ -2,8 +2,12 @@
 -- Worker
 -- ============================================================
 -- name: RegisterWorker :one
-INSERT INTO worker (public_key, connection_url)
-    VALUES (@public_key, @connection_url)
+INSERT INTO worker (
+    public_key,
+    connection_url)
+VALUES (
+    @public_key,
+    @connection_url)
 RETURNING
     id;
 
@@ -41,10 +45,16 @@ WHERE
 -- Nonce
 -- ============================================================
 -- name: CreateNonce :one
-INSERT INTO worker_nonce (worker_id, nonce)
-    VALUES (@worker_id, @nonce)
+INSERT INTO worker_nonce (
+    worker_id,
+    nonce)
+VALUES (
+    @worker_id,
+    @nonce)
 RETURNING
-    id, nonce, expires_at;
+    id,
+    nonce,
+    expires_at;
 
 -- name: ConsumeNonce :one
 UPDATE
@@ -69,10 +79,18 @@ WHERE expires_at < now();
 -- Session
 -- ============================================================
 -- name: CreateSession :one
-INSERT INTO worker_session (worker_id, access_key, expires_at)
-    VALUES (@worker_id, @access_key, @expires_at)
+INSERT INTO worker_session (
+    worker_id,
+    access_key,
+    expires_at)
+VALUES (
+    @worker_id,
+    @access_key,
+    @expires_at)
 RETURNING
-    id, access_key, expires_at;
+    id,
+    access_key,
+    expires_at;
 
 -- name: GetSession :one
 SELECT
@@ -97,4 +115,60 @@ WHERE
 -- name: DeleteExpiredSessions :exec
 DELETE FROM worker_session
 WHERE expires_at < now();
+
+-- ============================================================
+-- Data Functions
+-- ============================================================
+-- name: CreateDataFunction :exec
+INSERT INTO data_function (
+    name,
+    ast_hash,
+    git_commit_hash,
+    worker_id,
+    output_model,
+    is_active,
+    input_model,
+    execution_timeout_seconds,
+    ttl_seconds)
+VALUES (
+    @name,
+    @ast_hash,
+    @git_commit_hash,
+    @worker_id,
+    @output_model,
+    @is_active,
+    @input_model,
+    @execution_timeout_seconds,
+    @ttl_seconds);
+
+-- ============================================================
+-- Task
+-- ============================================================
+-- name: CreateTask :exec
+INSERT INTO task (
+    name,
+    ast_hash,
+    worker_id,
+    description,
+    execution_timeout,
+    deadline,
+    retry_count,
+    backoff_strategy,
+    input_model,
+    output_model,
+    git_commit_hash,
+    is_active)
+VALUES (
+    @name,
+    @ast_hash,
+    @worker_id,
+    @description,
+    @execution_timeout,
+    @deadline,
+    @retry_count,
+    @backoff_strategy,
+    @input_model,
+    @output_model,
+    @git_commit_hash,
+    @is_active);
 

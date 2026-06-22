@@ -607,7 +607,7 @@ type DataFunction struct {
 	Name                    string
 	AstHash                 string
 	GitCommitHash           string
-	WorkerID                int32
+	WorkerID                pgtype.UUID
 	OutputModel             []byte
 	IsActive                pgtype.Bool
 	InputModel              []byte
@@ -677,7 +677,7 @@ type Result struct {
 type Task struct {
 	Name             string
 	AstHash          string
-	WorkerID         int32
+	WorkerID         pgtype.UUID
 	Description      string
 	ExecutionTimeout pgtype.Int4
 	Deadline         pgtype.Int4
@@ -695,7 +695,7 @@ type TaskExecution struct {
 	WorkflowRunID            int32
 	TaskName                 string
 	TaskAstHash              string
-	TaskWorkerID             string
+	TaskWorkerID             pgtype.UUID
 	RequestedAt              pgtype.Timestamptz
 	Result                   []byte
 	Failed                   pgtype.Bool
@@ -711,10 +711,10 @@ type TaskExecution struct {
 type TaskRequiredDataFunction struct {
 	TaskName     string
 	TaskAstHash  string
-	TaskWorkerID int32
+	TaskWorkerID pgtype.UUID
 	DfName       string
 	DfAstHash    string
-	DfWorkerID   string
+	DfWorkerID   pgtype.UUID
 }
 
 type Window struct {
@@ -756,7 +756,6 @@ type WorkerNonce struct {
 	WorkerID  pgtype.UUID
 	Nonce     []byte
 	ExpiresAt pgtype.Timestamptz
-	CreatedAt pgtype.Timestamptz
 	Used      bool
 }
 
@@ -773,7 +772,7 @@ type Workflow struct {
 	ID                   int32
 	Name                 string
 	Hash                 string
-	WorkerID             int32
+	WorkerID             pgtype.UUID
 	Source               WorkflowSource
 	Description          pgtype.Text
 	InputModel           []byte
@@ -788,10 +787,10 @@ type WorkflowEdge struct {
 	WorkflowID       int32
 	FromTaskName     string
 	FromTaskAstHash  string
-	FromTaskWorkerID string
+	FromTaskWorkerID pgtype.UUID
 	ToTaskName       string
 	ToTaskAstHash    string
-	ToTaskWorkerID   string
+	ToTaskWorkerID   pgtype.UUID
 }
 
 type WorkflowRun struct {
@@ -807,8 +806,8 @@ type WorkflowTransistivePair struct {
 	WorkflowID       int32
 	FromTaskName     string
 	FromTaskAstHash  string
-	FromTaskWorkerID int32
+	FromTaskWorkerID pgtype.UUID
 	ToTaskName       string
 	ToTaskAstHash    string
-	ToTaskWorkerID   int32
+	ToTaskWorkerID   pgtype.UUID
 }

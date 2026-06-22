@@ -103,7 +103,7 @@ CREATE TABLE data_function (
     name text NOT NULL, -- name of the data function
     ast_hash text NOT NULL, -- the has of the AST segment
     git_commit_hash text NOT NULL, -- git commit hash of the current commit
-    worker_id integer NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
+    worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
     output_model jsonb NOT NULL,
     is_active boolean DEFAULT TRUE, -- a flag that if set to true, denotes
     -- that this version is currently being served
@@ -120,7 +120,7 @@ CREATE TABLE data_function (
 CREATE TABLE task (
     name text NOT NULL,
     ast_hash text NOT NULL, -- hash of the AST for the segment that defines the task
-    worker_id integer NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
+    worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
     description text NOT NULL,
     execution_timeout integer, -- seconds
     deadline integer, -- seconds
@@ -137,13 +137,13 @@ CREATE TABLE task (
 );
 
 -- what tasks require what data functions
-CREATE TABLE task_required_data_functions (
+CREATE TABLE task_required_data_function (
     task_name text NOT NULL,
     task_ast_hash text NOT NULL,
-    task_worker_id integer NOT NULL,
+    task_worker_id uuid NOT NULL,
     df_name text NOT NULL,
     df_ast_hash text NOT NULL,
-    df_worker_id text NOT NULL,
+    df_worker_id uuid NOT NULL,
     FOREIGN KEY (task_name, task_ast_hash, task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
     FOREIGN KEY (df_name, df_ast_hash, df_worker_id) REFERENCES data_function (name, ast_hash, worker_id) ON DELETE CASCADE,
     PRIMARY KEY (task_name, task_ast_hash, task_worker_id, df_name, df_ast_hash, df_worker_id)
@@ -154,7 +154,7 @@ CREATE TABLE workflow (
     id serial PRIMARY KEY,
     name text NOT NULL,
     hash text NOT NULL,
-    worker_id integer NOT NULL REFERENCES worker (id),
+    worker_id uuid NOT NULL REFERENCES worker (id),
     source workflow_source NOT NULL DEFAULT 'WORKFLOW_SOURCE_UNDEFINED',
     description text,
     input_model jsonb,
@@ -176,10 +176,10 @@ CREATE TABLE workflow_edges (
     workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
     from_task_ast_hash text NOT NULL,
-    from_task_worker_id text NOT NULL,
+    from_task_worker_id uuid NOT NULL,
     to_task_name text NOT NULL,
     to_task_ast_hash text NOT NULL,
-    to_task_worker_id text NOT NULL,
+    to_task_worker_id uuid NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES workflow (id),
     FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
     FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
@@ -203,10 +203,10 @@ CREATE TABLE workflow_transistive_pairs (
     workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
     from_task_ast_hash text NOT NULL,
-    from_task_worker_id integer NOT NULL,
+    from_task_worker_id uuid NOT NULL,
     to_task_name text NOT NULL,
     to_task_ast_hash text NOT NULL,
-    to_task_worker_id integer NOT NULL,
+    to_task_worker_id uuid NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES workflow (id),
     FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
     FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
@@ -293,7 +293,7 @@ CREATE TABLE task_execution (
     workflow_run_id integer NOT NULL REFERENCES workflow_run (id),
     task_name text NOT NULL,
     task_ast_hash text NOT NULL,
-    task_worker_id text NOT NULL,
+    task_worker_id uuid NOT NULL,
     requested_at timestamptz NOT NULL DEFAULT NOW(),
     result jsonb,
     failed boolean,

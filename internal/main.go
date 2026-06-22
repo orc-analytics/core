@@ -4,9 +4,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,13 +30,27 @@ type (
 		pb.UnimplementedCoreServer
 		db *db.DB
 	}
+
+	// key used to access session details from context
+	ctxKey struct{}
 )
 
-var (
+const (
 	// how many times should we retry generating a random key that
 	// clashes with unique constraint in DB?
 	RANDOM_KEY_MAX_RETRIES = 5
+
+	// number of times we should retry a transaction
+	TRANSACTION_MAX_RETRIES = 5
 )
+
+// captures postgres transaction errors (due to contention) where a retry is
+// worth it
+func isTxRetryable(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) &&
+		(pgErr.Code == db.PgSerializationFailure || pgErr.Code == db.PgDeadlock)
+}
 
 // performs a retry of a DB query when a unique violation is reached
 // useful for when random keys are being generated
@@ -41,6 +61,10 @@ func retryOnUniqueViolation[T any](attempts int, fn func() (T, error)) (T, error
 		if err == nil {
 			return result, nil
 		}
+		if isTxRetryable(err) {
+			// return anyway - we need a transaction level retry
+			return zero, err
+		}
 		var pgErr *pgconn.PgError
 		if !errors.As(err, &pgErr) || pgErr.Code != db.PgUniqueViolation {
 			return zero, status.Error(codes.Unavailable, db.ErrDatabase(err))
@@ -49,35 +73,34 @@ func retryOnUniqueViolation[T any](attempts int, fn func() (T, error)) (T, error
 	return zero, status.Error(codes.ResourceExhausted, "max retries exceeded on unique violation")
 }
 
-// TODO: Pick out the access code from within here.
-func AuthInterceptor(
-	ctx context.Context,
-	req any,
-	info *grpc.UnaryServerInfo,
-	handler grpc.UnaryHandler,
-) (any, error) {
-	// allow unathenticated access to core to this endpoint
-	if info.FullMethod == "/Core/RegisterWorker" {
-		return handler(ctx, req)
+// c.db.WithTx but with retries in the event of a contentions query or commit.
+func (c *CoreServer) txWithRetry(ctx context.Context, fn func(qtx *db.Queries) error) error {
+	for range TRANSACTION_MAX_RETRIES {
+		tx, err := c.db.BeginTx(ctx)
+		if err != nil {
+			return err // don't retry. begin itself failed
+		}
+
+		if err = fn(c.db.WithTx(tx)); err != nil {
+			tx.Rollback(ctx)
+			if isTxRetryable(err) {
+				continue
+			}
+			return err
+		}
+
+		if err = tx.Commit(ctx); err != nil {
+			tx.Rollback(ctx)
+			if isTxRetryable(err) {
+				// serialisation failure  can surface at commit
+				// so we check here also for a retry
+				continue
+			}
+			return err
+		}
+		return nil
 	}
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-
-	vals := md.Get("authorization")
-	if len(vals) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization header")
-	}
-
-	token := vals[0] // e.g. "Bearer <token>"
-
-	// TODO: Check the authentication against the nonce's
-
-	// Validate token, add claims to context, etc.
-	ctx = context.WithValue(ctx, ctxKeyUser{}, token)
-
-	return handler(ctx, req) // call the actual handler
+	return status.Error(codes.Unavailable, "transaction failed after max retries")
 }
 
 // NewServer produces a new core gRPC server
@@ -102,90 +125,158 @@ func NewServer(
 	return s, nil
 }
 
+// --------------------------- Interceptors ---------------------------
+type ctxSession struct {
+	workerId  pgtype.UUID
+	expiresAt time.Time
+}
+
+// checks for an access key in the Bearer token
+func (c *CoreServer) AuthInterceptor(
+	ctx context.Context,
+	req any,
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (any, error) {
+	// allow unathenticated access to these endpoints
+	// required for setting up the auth flow
+	var publicMethods = map[string]struct{}{
+		"/Core/RegisterWorker": {},
+		"/Core/GetNonce":       {},
+		"/Core/CheckNonce":     {},
+	}
+
+	if _, ok := publicMethods[info.FullMethod]; ok {
+		return handler(ctx, req)
+	}
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing metadata")
+	}
+
+	vals := md.Get("authorization")
+	if len(vals) == 0 {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization header")
+	}
+
+	// Bearer <token>
+	authHeader := vals[0]
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil, status.Error(codes.Unauthenticated, "authorization header must be Bearer token")
+	}
+	accessKey, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(authHeader, "Bearer "))
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "access key needs to be base64 encoded")
+	}
+
+	// validate token
+	sessionRow, err := c.db.Query().GetSession(ctx, accessKey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.Unauthenticated, "access key not found")
+		} else {
+			return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+	}
+	if sessionRow.ExpiresAt.Time.Before(time.Now()) {
+		return nil, status.Error(codes.Unauthenticated, "access key expired")
+	}
+
+	// get the worker ID
+	var workerId pgtype.UUID
+	if err := workerId.Scan(sessionRow.WorkerID.String()); err != nil {
+		return nil, status.Error(codes.Internal, db.ErrBadWorkerId)
+	}
+
+	// add claims
+	session := ctxSession{
+		workerId:  workerId,
+		expiresAt: sessionRow.ExpiresAt.Time,
+	}
+
+	ctx = context.WithValue(ctx, ctxKey{}, session)
+
+	return handler(ctx, req)
+}
+func SessionFromCtx(ctx context.Context) (ctxSession, bool) {
+	v, ok := ctx.Value(ctxKey{}).(ctxSession)
+	return v, ok
+}
+
 // --------------------------- gRPC Services ---------------------------
 // Register a worker, returns worker ID or an error on public key conflict
+// public endpoint
 func (c *CoreServer) RegisterWorker(ctx context.Context, w *pb.RegisterWorkerRequest) (*pb.RegisterWorkerResponse, error) {
-	tx, err := c.db.BeginTx(ctx)
-	if err != nil {
-		slog.Error("could not start a transaction with the DB", "error", err)
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-	defer tx.Rollback(ctx)
-	qtx := c.db.WithTx(tx)
-
 	// validate the key
 	publicKey := w.GetPublicKey()
-	if len(publicKey) == ed25519.PublicKeySize {
+	if len(publicKey) != ed25519.PublicKeySize {
 		return nil, status.Error(codes.InvalidArgument, db.ErrBadPublicKey)
 	}
+	var workerUUID pgtype.UUID
+	err := c.txWithRetry(ctx, func(qtx *db.Queries) error {
+		var err error
+		workerUUID, err = qtx.RegisterWorker(ctx, db.RegisterWorkerParams{
+			PublicKey: publicKey,
+		})
 
-	workerUUID, err := qtx.RegisterWorker(ctx, db.RegisterWorkerParams{
-		PublicKey: publicKey,
-	})
-
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == db.PgUniqueViolation {
-			return nil, status.Error(codes.AlreadyExists, db.ErrWorkerAlreadyExists)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == db.PgUniqueViolation {
+				return status.Error(codes.AlreadyExists, db.ErrWorkerAlreadyExists)
+			}
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
 		}
-		slog.Error("failed to register worker", "error", err)
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	if err := tx.Commit(ctx); err != nil {
-		slog.Error("failed to commit transaction", "error", err)
-		return nil, status.Error(codes.Internal, db.ErrServer(err))
-	}
-
 	return &pb.RegisterWorkerResponse{WorkerId: workerUUID.String()}, nil
 }
 
 // starts an authentication flow
+// public endpoint
 func (c *CoreServer) GetNonce(ctx context.Context, n *pb.GetNonceRequest) (*pb.GetNonceResponse, error) {
-	tx, err := c.db.BeginTx(ctx)
-	if err != nil {
-		slog.Error("could not start a transaction with the DB", "error", err)
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-	defer tx.Rollback(ctx)
-	qtx := c.db.WithTx(tx)
-
 	var workerId pgtype.UUID
-	if err = workerId.Scan(n.GetWorkerId()); err != nil {
+	if err := workerId.Scan(n.GetWorkerId()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, db.ErrBadWorkerId)
 	}
-
-	exists, err := qtx.CheckWorkerExistsById(ctx, workerId)
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-	if !exists {
-		return nil, status.Error(codes.NotFound, db.ErrWorkerNotFound)
-	}
-
-	nonceRow, err := retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateNonceRow, error) {
-		nonce := make([]byte, 32)
-		if _, err = rand.Read(nonce); err != nil {
-			return db.CreateNonceRow{}, status.Error(codes.Internal, db.ErrServer(err))
+	var nonceRow db.CreateNonceRow
+	err := c.txWithRetry(ctx, func(qtx *db.Queries) error {
+		exists, err := qtx.CheckWorkerExistsById(ctx, workerId)
+		if err != nil {
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
 		}
-		return qtx.CreateNonce(ctx, db.CreateNonceParams{
-			WorkerID: workerId,
-			Nonce:    nonce,
+		if !exists {
+			return status.Error(codes.NotFound, db.ErrWorkerNotFound)
+		}
+
+		nonceRow, err = retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateNonceRow, error) {
+			nonce := make([]byte, 32)
+			if _, err = rand.Read(nonce); err != nil {
+				return db.CreateNonceRow{}, status.Error(codes.Internal, db.ErrServer(err))
+			}
+			return qtx.CreateNonce(ctx, db.CreateNonceParams{
+				WorkerID: workerId,
+				Nonce:    nonce,
+			})
 		})
+
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-
 	return &pb.GetNonceResponse{Challenge: nonceRow.Nonce}, nil
 }
 
 // checks the user signed nonce and issues a access token
+// public endpoint
 func (c *CoreServer) CheckNonce(ctx context.Context, n *pb.CheckNonceRequest) (*pb.CheckNonceResponse, error) {
 	// validate inputs up front before touching the DB
 	var nonceId pgtype.UUID
@@ -197,60 +288,150 @@ func (c *CoreServer) CheckNonce(ctx context.Context, n *pb.CheckNonceRequest) (*
 	if err := workerId.Scan(n.GetWorkerId()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, db.ErrBadWorkerId)
 	}
-
-	tx, err := c.db.BeginTx(ctx)
-	if err != nil {
-		slog.Error("could not start transaction", "error", err)
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-	defer tx.Rollback(ctx)
-	qtx := c.db.WithTx(tx)
-
-	worker, err := qtx.GetWorkerByID(ctx, workerId)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, status.Error(codes.NotFound, db.ErrWorkerNotFound)
+	var sessionRow db.CreateSessionRow
+	err := c.txWithRetry(ctx, func(qtx *db.Queries) error {
+		worker, err := qtx.GetWorkerByID(ctx, workerId)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return status.Error(codes.NotFound, db.ErrWorkerNotFound)
+			}
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
 		}
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
 
-	// atomic action to get the nonce then immediately consume it is safer
-	// prevents replay attacks
-	consumed, err := qtx.ConsumeNonce(ctx, db.ConsumeNonceParams{
-		WorkerID: workerId,
-		NonceID:  nonceId,
-	})
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, status.Error(codes.NotFound, db.ErrNonceNotFound)
-		}
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
-	}
-
-	if !ed25519.Verify(worker.PublicKey, consumed.Nonce, n.GetSignedChallenge()) {
-		return nil, status.Error(codes.Unauthenticated, db.ErrBadSignature)
-	}
-
-	// issue access key
-	sessionRow, err := retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateSessionRow, error) {
-		accessKey := make([]byte, 32)
-		if _, err = rand.Read(accessKey); err != nil {
-			return db.CreateSessionRow{}, status.Error(codes.Internal, db.ErrServer(err))
-		}
-		return qtx.CreateSession(ctx, db.CreateSessionParams{
-			WorkerID:  workerId,
-			AccessKey: accessKey,
+		// atomic action to get the nonce then immediately consume it is safer
+		// prevents replay attacks
+		consumed, err := qtx.ConsumeNonce(ctx, db.ConsumeNonceParams{
+			WorkerID: workerId,
+			NonceID:  nonceId,
 		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return status.Error(codes.NotFound, db.ErrNonceNotFound)
+			}
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+
+		if !ed25519.Verify(worker.PublicKey, consumed.Nonce, n.GetSignedChallenge()) {
+			return status.Error(codes.Unauthenticated, db.ErrBadSignature)
+		}
+
+		// issue access key
+		sessionRow, err = retryOnUniqueViolation(RANDOM_KEY_MAX_RETRIES, func() (db.CreateSessionRow, error) {
+			accessKey := make([]byte, 32)
+			if _, err = rand.Read(accessKey); err != nil {
+				return db.CreateSessionRow{}, status.Error(codes.Internal, db.ErrServer(err))
+			}
+			return qtx.CreateSession(ctx, db.CreateSessionParams{
+				WorkerID:  workerId,
+				AccessKey: accessKey,
+			})
+		})
+		if err != nil {
+			return err
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, status.Error(codes.Unavailable, db.ErrDatabase(err))
+	return &pb.CheckNonceResponse{
+		AccessKey: sessionRow.AccessKey,
+		ExpiresAt: timestamppb.New(
+			sessionRow.ExpiresAt.Time,
+		)}, nil
+}
+
+func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterWorkerSnapshotRequest) (*pb.RegisterWorkerSnapshotResponse, error) {
+	// get session
+	session, ok := SessionFromCtx(ctx)
+	if !ok { // should never reach
+		return nil, status.Error(codes.Unauthenticated, "no active session")
 	}
 
-	return &pb.CheckNonceResponse{AccessKey: sessionRow.AccessKey, ExpiresAt: timestamppb.New(
-		sessionRow.ExpiresAt.Time,
-	)}, nil
+	err := c.txWithRetry(ctx, func(qtx *db.Queries) error {
+		// insert data functions
+		for _, df := range r.DataFunctions {
+			// validate that we can marshal the input and output models
+			var inputModel *jsonschema.Schema
+			err := json.Unmarshal(df.GetInputModel(), inputModel)
+			if err != nil {
+				return status.Error(
+					codes.InvalidArgument,
+					db.ErrBadArgument(fmt.Sprintf("input model to data function %w not a valid json-schema", df.GetName())),
+				)
+			}
+			var outputModel *jsonschema.Schema
+			err = json.Unmarshal(df.GetOutputModel(), outputModel)
+			if err != nil {
+				return status.Error(
+					codes.InvalidArgument,
+					db.ErrBadArgument(fmt.Sprintf("output model to data function %w not a valid json-schema", df.GetName())),
+				)
+			}
+
+			dfSettings := df.GetSettings()
+
+			err = qtx.CreateDataFunction(ctx, db.CreateDataFunctionParams{
+				Name:                    df.GetName(),
+				AstHash:                 df.GetHash(),
+				GitCommitHash:           r.GetGitCommitHash(),
+				WorkerID:                session.workerId,
+				OutputModel:             df.GetOutputModel(),
+				InputModel:              df.GetOutputModel(),
+				IsActive:                pgtype.Bool{Valid: true, Bool: true},
+				ExecutionTimeoutSeconds: pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
+				TtlSeconds:              pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
+			})
+			var pgErr *pgconn.PgError
+			if !errors.As(err, &pgErr) || pgErr.Code != db.PgUniqueViolation {
+				// do nothing - the data function already exists
+			}
+			if err != nil {
+				return status.Error(codes.Unavailable, db.ErrDatabase(err))
+			}
+		}
+		// insert tasks
+		for _, task := range r.GetTasks() {
+			// validate the input and output models
+			var inputModel *jsonschema.Schema
+			err := json.Unmarshal(task.GetInputModel(), inputModel)
+			if err != nil {
+				return status.Error(
+					codes.InvalidArgument,
+					db.ErrBadArgument(fmt.Sprintf("input model to task %w not a valid json-schema", task.GetName())),
+				)
+			}
+			var outputModel *jsonschema.Schema
+			err = json.Unmarshal(task.GetOutputModel(), outputModel)
+			if err != nil {
+				return status.Error(
+					codes.InvalidArgument,
+					db.ErrBadArgument(fmt.Sprintf("output model to task %w not a valid json-schema", task.GetName())),
+				)
+			}
+
+			taskSettings := task.GetExecutionSettings()
+
+			// Name             string
+			// AstHash          string
+			// WorkerID         pgtype.UUID
+			// Description      string
+			// ExecutionTimeout pgtype.Int4
+			// Deadline         pgtype.Int4
+			// RetryCount       pgtype.Int4
+			// BackoffStrategy  NullBackoffStrategy
+			// InputModel       []byte
+			// OutputModel      []byte
+			// GitCommitHash    string
+			// IsActive         pgtype.Bool
+			err := qtx.CreateTask(ctx, db.CreateTaskParams{})
+
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return nil, nil
 }

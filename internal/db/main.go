@@ -55,7 +55,6 @@ func (d *DB) BeginTx(ctx context.Context) (pgx.Tx, error) {
 	})
 	if err != nil {
 		slog.Error("could not start a transaction with the DB", "error", err)
-		tx.Rollback(ctx)
 		return nil, err
 	}
 	return tx, nil
@@ -63,4 +62,8 @@ func (d *DB) BeginTx(ctx context.Context) (pgx.Tx, error) {
 
 func (d *DB) WithTx(tx pgx.Tx) *Queries {
 	return d.queries.WithTx(tx)
+}
+
+func (d *DB) Query() *Queries {
+	return d.queries
 }
