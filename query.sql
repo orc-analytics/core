@@ -172,3 +172,84 @@ VALUES (
     @git_commit_hash,
     @is_active);
 
+-- name: RequireDatafunctionForTask :exec
+INSERT INTO task_required_data_function (
+    task_name,
+    task_ast_hash,
+    task_worker_id,
+    df_name,
+    df_ast_hash,
+    df_worker_id)
+VALUES (
+    @task_name,
+    @task_ast_hash,
+    @task_worker_id,
+    @df_name,
+    @df_ast_hash,
+    @df_worker_id);
+
+-- ============================================================
+-- Workflows
+-- ============================================================
+-- name: CreateWorkflow :one
+INSERT INTO workflow (
+    name,
+    hash,
+    worker_id,
+    source,
+    description,
+    input_model,
+    task_concurrency_limit,
+    halt_on_failure,
+    git_commit_hash,
+    status)
+VALUES (
+    @name,
+    @hash,
+    @worker_id,
+    @source,
+    @description,
+    @input_model,
+    @task_concurrency_limit,
+    @halt_on_failure,
+    @git_commit_hash,
+    @status)
+RETURNING
+    id;
+
+-- name: CreateWorkflowEdge :exec
+INSERT INTO workflow_edges (
+    workflow_id,
+    from_task_name,
+    from_task_ast_hash,
+    from_task_worker_id,
+    to_task_name,
+    to_task_ast_hash,
+    to_task_worker_id)
+VALUES (
+    @workflow_id,
+    @from_task_name,
+    @from_task_ast_hash,
+    @from_task_worker_id,
+    @to_task_name,
+    @to_task_ast_hash,
+    @to_task_worker_id);
+
+-- name: CreateWorkflowTransistivepair :exec
+INSERT INTO workflow_transistive_pairs (
+    workflow_id,
+    from_task_name,
+    from_task_ast_hash,
+    from_task_worker_id,
+    to_task_name,
+    to_task_ast_hash,
+    to_task_worker_id)
+VALUES (
+    @workflow_id,
+    @from_task_name,
+    @from_task_ast_hash,
+    @from_task_worker_id,
+    @to_task_name,
+    @to_task_ast_hash,
+    @to_task_worker_id);
+

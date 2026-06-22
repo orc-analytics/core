@@ -23,6 +23,7 @@ var (
 	ErrDatabase                  = func(err error) string { return fmt.Sprintf("database error: %v", err.Error()) }
 	ErrServer                    = func(err error) string { return fmt.Sprintf("server error: %v", err.Error()) }
 	ErrBadArgument               = func(errMsg string) string { return fmt.Sprintf("bad input argument: %w", errMsg) }
+	ErrAlreadyExists             = func(errMsg string) string { return fmt.Sprintf("entity already exists: %w", errMsg) }
 )
 
 type CircularDependencyError struct {

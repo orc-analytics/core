@@ -56,6 +56,49 @@ func (ns NullAlgorithmState) Value() (driver.Value, error) {
 	return string(ns.AlgorithmState), nil
 }
 
+type AssetStatus string
+
+const (
+	AssetStatusInactive AssetStatus = "inactive"
+	AssetStatusPending  AssetStatus = "pending"
+	AssetStatusActive   AssetStatus = "active"
+)
+
+func (e *AssetStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AssetStatus(s)
+	case string:
+		*e = AssetStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AssetStatus: %T", src)
+	}
+	return nil
+}
+
+type NullAssetStatus struct {
+	AssetStatus AssetStatus
+	Valid       bool // Valid is true if AssetStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAssetStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.AssetStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AssetStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAssetStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AssetStatus), nil
+}
+
 type BackoffStrategy string
 
 const (
@@ -609,7 +652,7 @@ type DataFunction struct {
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
-	IsActive                pgtype.Bool
+	IsActive                NullAssetStatus
 	InputModel              []byte
 	ExecutionTimeoutSeconds pgtype.Int4
 	TtlSeconds              pgtype.Int4
@@ -686,7 +729,7 @@ type Task struct {
 	InputModel       []byte
 	OutputModel      []byte
 	GitCommitHash    string
-	IsActive         pgtype.Bool
+	IsActive         NullAssetStatus
 	RegisteredAt     pgtype.Timestamptz
 }
 
@@ -779,7 +822,7 @@ type Workflow struct {
 	TaskConcurrencyLimit pgtype.Int4
 	HaltOnFailure        pgtype.Bool
 	GitCommitHash        string
-	IsActive             pgtype.Bool
+	Status               NullAssetStatus
 	RegisteredAt         pgtype.Timestamptz
 }
 

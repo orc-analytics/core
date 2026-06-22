@@ -99,14 +99,19 @@ CREATE TABLE worker_session (
     CONSTRAINT uq_access_key UNIQUE (access_key)
 );
 
+CREATE TYPE asset_status AS ENUM (
+    'inactive',
+    'pending',
+    'active'
+);
+
 CREATE TABLE data_function (
     name text NOT NULL, -- name of the data function
     ast_hash text NOT NULL, -- the has of the AST segment
     git_commit_hash text NOT NULL, -- git commit hash of the current commit
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
     output_model jsonb NOT NULL,
-    is_active boolean DEFAULT TRUE, -- a flag that if set to true, denotes
-    -- that this version is currently being served
+    is_active asset_status DEFAULT inactive,
     input_model jsonb,
     execution_timeout_seconds integer,
     ttl_seconds integer,
@@ -129,7 +134,7 @@ CREATE TABLE task (
     input_model jsonb,
     output_model jsonb,
     git_commit_hash text NOT NULL, -- current git commit
-    is_active boolean DEFAULT TRUE, -- a flag that if set to true, denotes
+    is_active asset_status DEFAULT inactive,
     -- that this version is currently being served
     registered_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (name, ast_hash, worker_id) -- ensures that a task can be attached to different workers
@@ -161,7 +166,7 @@ CREATE TABLE workflow (
     task_concurrency_limit integer,
     halt_on_failure boolean,
     git_commit_hash text NOT NULL, -- current git commit
-    is_active boolean,
+    status asset_status DEFAULT inactive,
     registered_at timestamptz NOT NULL DEFAULT now()
     -- workflows are globally unique, and are uniquely defined by their name and contents (hash).
     -- There is some lifecycle management that needs to be handled, this is done in application code.
@@ -215,15 +220,15 @@ CREATE TABLE workflow_transistive_pairs (
 
 CREATE UNIQUE INDEX one_active_owner_per_data_function ON data_function (name)
 WHERE
-    is_active = TRUE;
+    status IN ('pending', 'active');
 
 CREATE UNIQUE INDEX one_active_owner_per_task ON task (name)
 WHERE
-    is_active = TRUE;
+    status IN ('pending', 'active');
 
 CREATE UNIQUE INDEX one_active_owner_per_workflow ON workflow (name)
 WHERE
-    is_active = TRUE;
+    status IN ('pending', 'active');
 
 CREATE INDEX idx_worker_session_access_key ON worker_session (access_key)
 WHERE

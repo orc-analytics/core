@@ -8,7 +8,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.2
-	github.com/orca-telemetry/contract/go/v2 v2.0.0-6f35d0d
+	github.com/orca-telemetry/contract/go/v2 v2.0.0-66ffd0d
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.39.0
 	gonum.org/v1/gonum v0.17.0

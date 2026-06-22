@@ -92,7 +92,7 @@ type CreateDataFunctionParams struct {
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
-	IsActive                pgtype.Bool
+	IsActive                NullAssetStatus
 	InputModel              []byte
 	ExecutionTimeoutSeconds pgtype.Int4
 	TtlSeconds              pgtype.Int4
@@ -228,7 +228,7 @@ type CreateTaskParams struct {
 	InputModel       []byte
 	OutputModel      []byte
 	GitCommitHash    string
-	IsActive         pgtype.Bool
+	IsActive         NullAssetStatus
 }
 
 // ============================================================
@@ -248,6 +248,151 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
 		arg.OutputModel,
 		arg.GitCommitHash,
 		arg.IsActive,
+	)
+	return err
+}
+
+const createWorkflow = `-- name: CreateWorkflow :one
+INSERT INTO workflow (
+    name,
+    hash,
+    worker_id,
+    source,
+    description,
+    input_model,
+    task_concurrency_limit,
+    halt_on_failure,
+    git_commit_hash,
+    status)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10)
+RETURNING
+    id
+`
+
+type CreateWorkflowParams struct {
+	Name                 string
+	Hash                 string
+	WorkerID             pgtype.UUID
+	Source               WorkflowSource
+	Description          pgtype.Text
+	InputModel           []byte
+	TaskConcurrencyLimit pgtype.Int4
+	HaltOnFailure        pgtype.Bool
+	GitCommitHash        string
+	Status               NullAssetStatus
+}
+
+// ============================================================
+// Workflows
+// ============================================================
+func (q *Queries) CreateWorkflow(ctx context.Context, arg CreateWorkflowParams) (int32, error) {
+	row := q.db.QueryRow(ctx, createWorkflow,
+		arg.Name,
+		arg.Hash,
+		arg.WorkerID,
+		arg.Source,
+		arg.Description,
+		arg.InputModel,
+		arg.TaskConcurrencyLimit,
+		arg.HaltOnFailure,
+		arg.GitCommitHash,
+		arg.Status,
+	)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createWorkflowEdge = `-- name: CreateWorkflowEdge :exec
+INSERT INTO workflow_edges (
+    workflow_id,
+    from_task_name,
+    from_task_ast_hash,
+    from_task_worker_id,
+    to_task_name,
+    to_task_ast_hash,
+    to_task_worker_id)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7)
+`
+
+type CreateWorkflowEdgeParams struct {
+	WorkflowID       int32
+	FromTaskName     string
+	FromTaskAstHash  string
+	FromTaskWorkerID pgtype.UUID
+	ToTaskName       string
+	ToTaskAstHash    string
+	ToTaskWorkerID   pgtype.UUID
+}
+
+func (q *Queries) CreateWorkflowEdge(ctx context.Context, arg CreateWorkflowEdgeParams) error {
+	_, err := q.db.Exec(ctx, createWorkflowEdge,
+		arg.WorkflowID,
+		arg.FromTaskName,
+		arg.FromTaskAstHash,
+		arg.FromTaskWorkerID,
+		arg.ToTaskName,
+		arg.ToTaskAstHash,
+		arg.ToTaskWorkerID,
+	)
+	return err
+}
+
+const createWorkflowTransistivepair = `-- name: CreateWorkflowTransistivepair :exec
+INSERT INTO workflow_transistive_pairs (
+    workflow_id,
+    from_task_name,
+    from_task_ast_hash,
+    from_task_worker_id,
+    to_task_name,
+    to_task_ast_hash,
+    to_task_worker_id)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7)
+`
+
+type CreateWorkflowTransistivepairParams struct {
+	WorkflowID       int32
+	FromTaskName     string
+	FromTaskAstHash  string
+	FromTaskWorkerID pgtype.UUID
+	ToTaskName       string
+	ToTaskAstHash    string
+	ToTaskWorkerID   pgtype.UUID
+}
+
+func (q *Queries) CreateWorkflowTransistivepair(ctx context.Context, arg CreateWorkflowTransistivepairParams) error {
+	_, err := q.db.Exec(ctx, createWorkflowTransistivepair,
+		arg.WorkflowID,
+		arg.FromTaskName,
+		arg.FromTaskAstHash,
+		arg.FromTaskWorkerID,
+		arg.ToTaskName,
+		arg.ToTaskAstHash,
+		arg.ToTaskWorkerID,
 	)
 	return err
 }
@@ -348,6 +493,44 @@ func (q *Queries) RegisterWorker(ctx context.Context, arg RegisterWorkerParams) 
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const requireDatafunctionForTask = `-- name: RequireDatafunctionForTask :exec
+INSERT INTO task_required_data_function (
+    task_name,
+    task_ast_hash,
+    task_worker_id,
+    df_name,
+    df_ast_hash,
+    df_worker_id)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6)
+`
+
+type RequireDatafunctionForTaskParams struct {
+	TaskName     string
+	TaskAstHash  string
+	TaskWorkerID pgtype.UUID
+	DfName       string
+	DfAstHash    string
+	DfWorkerID   pgtype.UUID
+}
+
+func (q *Queries) RequireDatafunctionForTask(ctx context.Context, arg RequireDatafunctionForTaskParams) error {
+	_, err := q.db.Exec(ctx, requireDatafunctionForTask,
+		arg.TaskName,
+		arg.TaskAstHash,
+		arg.TaskWorkerID,
+		arg.DfName,
+		arg.DfAstHash,
+		arg.DfWorkerID,
+	)
+	return err
 }
 
 const revokeSession = `-- name: RevokeSession :exec

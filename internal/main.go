@@ -373,19 +373,31 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			dfSettings := df.GetSettings()
 
 			err = qtx.CreateDataFunction(ctx, db.CreateDataFunctionParams{
-				Name:                    df.GetName(),
-				AstHash:                 df.GetHash(),
-				GitCommitHash:           r.GetGitCommitHash(),
-				WorkerID:                session.workerId,
-				OutputModel:             df.GetOutputModel(),
-				InputModel:              df.GetOutputModel(),
-				IsActive:                pgtype.Bool{Valid: true, Bool: true},
+				Name:          df.GetName(),
+				AstHash:       df.GetHash(),
+				GitCommitHash: r.GetGitCommitHash(),
+				WorkerID:      session.workerId,
+				OutputModel:   df.GetOutputModel(),
+				InputModel:    df.GetOutputModel(),
+				IsActive: db.NullAssetStatus{
+					AssetStatus: db.AssetStatusPending,
+					Valid:       true,
+				},
 				ExecutionTimeoutSeconds: pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
 				TtlSeconds:              pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
 			})
 			var pgErr *pgconn.PgError
-			if !errors.As(err, &pgErr) || pgErr.Code != db.PgUniqueViolation {
-				// do nothing - the data function already exists
+			if errors.As(err, &pgErr) || pgErr.Code == db.PgUniqueViolation {
+				switch pgErr.ConstraintName {
+				case "data_function_pKey":
+					// if there is a primary key violation - do nothing. this exact data
+					// function already exists
+
+				case "one_active_owner_per_data_function":
+					// raise an error - we are trying to add a data function with the same name
+					// as another active function
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a data function with name (%w) already exists and is either pending or active", df.GetName())))
+				}
 			}
 			if err != nil {
 				return status.Error(codes.Unavailable, db.ErrDatabase(err))
@@ -413,20 +425,90 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 
 			taskSettings := task.GetExecutionSettings()
 
-			// Name             string
-			// AstHash          string
-			// WorkerID         pgtype.UUID
-			// Description      string
-			// ExecutionTimeout pgtype.Int4
-			// Deadline         pgtype.Int4
-			// RetryCount       pgtype.Int4
-			// BackoffStrategy  NullBackoffStrategy
-			// InputModel       []byte
-			// OutputModel      []byte
-			// GitCommitHash    string
-			// IsActive         pgtype.Bool
-			err := qtx.CreateTask(ctx, db.CreateTaskParams{})
+			// backoff strategy
+			var backoffStrategy db.BackoffStrategy
+			switch taskSettings.GetBackoffStrategy() {
+			case pb.BackoffStrategy_BACKOFF_STRATEGY_LINEAR:
+				backoffStrategy = db.BackoffStrategyBACKOFFSTRATEGYLINEAR
+			case pb.BackoffStrategy_BACKOFF_STRATEGY_EXPONENTIAL:
+				backoffStrategy = db.BackoffStrategyBACKOFFSTRATEGYEXPONENTIAL
+			default:
+				backoffStrategy = db.BackoffStrategyBACKOFFSTRATEGYLINEAR
+			}
 
+			err = qtx.CreateTask(ctx, db.CreateTaskParams{
+				Name:        task.GetName(),
+				AstHash:     task.GetTaskHash(),
+				WorkerID:    session.workerId,
+				Description: task.GetDescription(),
+				ExecutionTimeout: pgtype.Int4{
+					Int32: taskSettings.GetExecutionTimeout(),
+					Valid: true,
+				},
+				Deadline: pgtype.Int4{
+					Int32: taskSettings.GetDeadline(),
+					Valid: true,
+				},
+				RetryCount: pgtype.Int4{
+					Int32: taskSettings.GetRetryCount(),
+					Valid: true,
+				},
+				BackoffStrategy: db.NullBackoffStrategy{
+					BackoffStrategy: backoffStrategy,
+					Valid:           true,
+				},
+				InputModel:    task.InputModel,
+				OutputModel:   task.OutputModel,
+				GitCommitHash: r.GitCommitHash,
+				IsActive: db.NullAssetStatus{
+					AssetStatus: db.AssetStatusPending,
+					Valid:       true,
+				},
+			})
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) || pgErr.Code == db.PgUniqueViolation {
+				switch pgErr.ConstraintName {
+				case "task_pKey":
+					// if there is a primary key violation - do nothing. this exact task
+					// already exists
+
+				case "one_active_owner_per_task":
+					// raise an error - we are trying to add a task with the same name
+					// as another in an active or pending state
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a task with name (%w) already exists and is either pending or active", task.GetName())))
+				}
+			}
+			if err != nil {
+				return status.Error(codes.Unavailable, db.ErrDatabase(err))
+			}
+
+			// add in the data functions the task requires
+			for _, df := range task.GetRequiredDataFunctions() {
+				// get the worker ID
+				var dfWorkerId pgtype.UUID
+				if err := dfWorkerId.Scan(df.GetWorkerId()); err != nil {
+					return status.Error(codes.InvalidArgument, db.ErrBadWorkerId)
+				}
+				err := qtx.RequireDatafunctionForTask(ctx, db.RequireDatafunctionForTaskParams{
+					TaskName:     task.GetName(),
+					TaskAstHash:  task.GetTaskHash(),
+					TaskWorkerID: session.workerId,
+					DfName:       df.GetDataFunction().GetName(),
+					DfAstHash:    df.GetDataFunction().GetHash(),
+					DfWorkerID:   dfWorkerId,
+				})
+
+				var pgErr *pgconn.PgError
+				if !errors.As(err, &pgErr) && pgErr.Code != db.PgUniqueViolation && pgErr.ConstraintName != "task_required_data_function_pKey" {
+					// return if the error is not the accepted kind (this row already exists)
+					return status.Error(codes.Unavailable, db.ErrDatabase(err))
+				}
+			}
+		}
+		// register all workflows
+
+		for _, workflow := range r.GetWorkflows() {
+			workflow.
 		}
 		return nil
 	})
