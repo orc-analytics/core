@@ -373,16 +373,13 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			dfSettings := df.GetSettings()
 
 			err = qtx.CreateDataFunction(ctx, db.CreateDataFunctionParams{
-				Name:          df.GetName(),
-				AstHash:       df.GetHash(),
-				GitCommitHash: r.GetGitCommitHash(),
-				WorkerID:      session.workerId,
-				OutputModel:   df.GetOutputModel(),
-				InputModel:    df.GetOutputModel(),
-				IsActive: db.NullAssetStatus{
-					AssetStatus: db.AssetStatusPending,
-					Valid:       true,
-				},
+				Name:                    df.GetName(),
+				AstHash:                 df.GetHash(),
+				GitCommitHash:           r.GetGitCommitHash(),
+				WorkerID:                session.workerId,
+				OutputModel:             df.GetOutputModel(),
+				InputModel:              df.GetOutputModel(),
+				Status:                  db.AssetStatusPending,
 				ExecutionTimeoutSeconds: pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
 				TtlSeconds:              pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
 			})
@@ -460,10 +457,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				InputModel:    task.InputModel,
 				OutputModel:   task.OutputModel,
 				GitCommitHash: r.GitCommitHash,
-				IsActive: db.NullAssetStatus{
-					AssetStatus: db.AssetStatusPending,
-					Valid:       true,
-				},
+				Status:        db.AssetStatusPending,
 			})
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) || pgErr.Code == db.PgUniqueViolation {
@@ -486,15 +480,15 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			for _, df := range task.GetRequiredDataFunctions() {
 				// get the worker ID
 				var dfWorkerId pgtype.UUID
-				if err := dfWorkerId.Scan(df.GetWorkerId()); err != nil {
+				if err := dfWorkerId.Scan(df.GetDfWorkerId()); err != nil {
 					return status.Error(codes.InvalidArgument, db.ErrBadWorkerId)
 				}
 				err := qtx.RequireDatafunctionForTask(ctx, db.RequireDatafunctionForTaskParams{
 					TaskName:     task.GetName(),
 					TaskAstHash:  task.GetTaskHash(),
 					TaskWorkerID: session.workerId,
-					DfName:       df.GetDataFunction().GetName(),
-					DfAstHash:    df.GetDataFunction().GetHash(),
+					DfName:       df.GetDfName(),
+					DfAstHash:    df.GetDfAstHash(),
 					DfWorkerID:   dfWorkerId,
 				})
 
@@ -506,9 +500,69 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			}
 		}
 		// register all workflows
-
 		for _, workflow := range r.GetWorkflows() {
-			workflow.
+			// validate the input model
+			var inputModel *jsonschema.Schema
+			err := json.Unmarshal(workflow.GetInputModel(), inputModel)
+			if err != nil {
+				return status.Error(
+					codes.InvalidArgument,
+					db.ErrBadArgument(fmt.Sprintf("input model to workflow %w not a valid json-schema", workflow.GetWorkflowName())),
+				)
+			}
+
+			var workflowSource db.WorkflowSource
+			switch workflow.GetWorkflowSource() {
+			case pb.WorkflowSource_UNDEFINED:
+				workflowSource = db.WorkflowSourceWORKFLOWSOURCEUNDEFINED
+			case pb.WorkflowSource_WORKER:
+				workflowSource = db.WorkflowSourceWORKFLOWSOURCEWORKER
+			default:
+				workflowSource = db.WorkflowSourceWORKFLOWSOURCEUNDEFINED
+			}
+
+			executionSettings := workflow.GetExecutionSettings()
+
+			workflowId, err := qtx.CreateWorkflow(ctx, db.CreateWorkflowParams{
+				Name:     workflow.GetWorkflowName(),
+				Hash:     workflow.GetWorkflowHash(),
+				WorkerID: session.workerId,
+				Source:   workflowSource,
+				Description: pgtype.Text{
+					Valid:  true,
+					String: workflow.GetDescription(),
+				},
+				InputModel: workflow.GetInputModel(),
+				TaskConcurrencyLimit: pgtype.Int4{
+					Int32: executionSettings.GetConcurrencyLimit(),
+					Valid: true,
+				},
+				HaltOnFailure: pgtype.Bool{
+					Bool:  workflow.GetHaltOnFailure(),
+					Valid: true,
+				},
+				GitCommitHash: r.GetGitCommitHash(),
+				Status:        db.AssetStatusPending,
+			})
+
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == db.PgUniqueViolation {
+				switch pgErr.ConstraintName {
+				case "workflow_pKey":
+				// this workflow already exists - do nothing
+				case "one_active_owner_per_workflow":
+					// this workflow name is taken
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a workflow with name (%w) already exists and is either pending or active", workflow.GetWorkflowName())))
+				}
+			}
+			if err != nil {
+				return status.Error(codes.Unavailable, db.ErrDatabase(err))
+			}
+
+			// add workflow edges
+
+			// add workflow transistive pairs - perform cycle detection here
+
 		}
 		return nil
 	})

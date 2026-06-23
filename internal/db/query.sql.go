@@ -70,7 +70,7 @@ INSERT INTO data_function (
     git_commit_hash,
     worker_id,
     output_model,
-    is_active,
+    status,
     input_model,
     execution_timeout_seconds,
     ttl_seconds)
@@ -92,7 +92,7 @@ type CreateDataFunctionParams struct {
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
-	IsActive                NullAssetStatus
+	Status                  AssetStatus
 	InputModel              []byte
 	ExecutionTimeoutSeconds pgtype.Int4
 	TtlSeconds              pgtype.Int4
@@ -108,7 +108,7 @@ func (q *Queries) CreateDataFunction(ctx context.Context, arg CreateDataFunction
 		arg.GitCommitHash,
 		arg.WorkerID,
 		arg.OutputModel,
-		arg.IsActive,
+		arg.Status,
 		arg.InputModel,
 		arg.ExecutionTimeoutSeconds,
 		arg.TtlSeconds,
@@ -200,7 +200,7 @@ INSERT INTO task (
     input_model,
     output_model,
     git_commit_hash,
-    is_active)
+    status)
 VALUES (
     $1,
     $2,
@@ -228,7 +228,7 @@ type CreateTaskParams struct {
 	InputModel       []byte
 	OutputModel      []byte
 	GitCommitHash    string
-	IsActive         NullAssetStatus
+	Status           AssetStatus
 }
 
 // ============================================================
@@ -247,7 +247,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
 		arg.InputModel,
 		arg.OutputModel,
 		arg.GitCommitHash,
-		arg.IsActive,
+		arg.Status,
 	)
 	return err
 }
@@ -289,7 +289,7 @@ type CreateWorkflowParams struct {
 	TaskConcurrencyLimit pgtype.Int4
 	HaltOnFailure        pgtype.Bool
 	GitCommitHash        string
-	Status               NullAssetStatus
+	Status               AssetStatus
 }
 
 // ============================================================

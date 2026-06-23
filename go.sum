@@ -134,6 +134,8 @@ github.com/orca-telemetry/contract/go/v2 v2.0.0-6f35d0d h1:PXjeNPhgFX/orxJ1T1yo9
 github.com/orca-telemetry/contract/go/v2 v2.0.0-6f35d0d/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-89f0bca h1:PaFinWTx3HlB9+um5BVKOKoeW24EJGZ0FedCDiuojrI=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-89f0bca/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-e54fe0a h1:7EY27lcV9ObTPE5sZxll2/cJ7cw6KwPgc8zNbEMgBBc=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-e54fe0a/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

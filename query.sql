@@ -126,7 +126,7 @@ INSERT INTO data_function (
     git_commit_hash,
     worker_id,
     output_model,
-    is_active,
+    status,
     input_model,
     execution_timeout_seconds,
     ttl_seconds)
@@ -136,7 +136,7 @@ VALUES (
     @git_commit_hash,
     @worker_id,
     @output_model,
-    @is_active,
+    @status,
     @input_model,
     @execution_timeout_seconds,
     @ttl_seconds);
@@ -157,7 +157,7 @@ INSERT INTO task (
     input_model,
     output_model,
     git_commit_hash,
-    is_active)
+    status)
 VALUES (
     @name,
     @ast_hash,
@@ -170,7 +170,7 @@ VALUES (
     @input_model,
     @output_model,
     @git_commit_hash,
-    @is_active);
+    @status);
 
 -- name: RequireDatafunctionForTask :exec
 INSERT INTO task_required_data_function (

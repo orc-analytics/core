@@ -111,7 +111,7 @@ CREATE TABLE data_function (
     git_commit_hash text NOT NULL, -- git commit hash of the current commit
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
     output_model jsonb NOT NULL,
-    is_active asset_status DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT inactive,
     input_model jsonb,
     execution_timeout_seconds integer,
     ttl_seconds integer,
@@ -134,7 +134,7 @@ CREATE TABLE task (
     input_model jsonb,
     output_model jsonb,
     git_commit_hash text NOT NULL, -- current git commit
-    is_active asset_status DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT inactive,
     -- that this version is currently being served
     registered_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (name, ast_hash, worker_id) -- ensures that a task can be attached to different workers
@@ -166,12 +166,13 @@ CREATE TABLE workflow (
     task_concurrency_limit integer,
     halt_on_failure boolean,
     git_commit_hash text NOT NULL, -- current git commit
-    status asset_status DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT inactive,
     registered_at timestamptz NOT NULL DEFAULT now()
-    -- workflows are globally unique, and are uniquely defined by their name and contents (hash).
+    -- workflows are globally unique, and are uniquely defined by their name when in pending
+    -- or active state.
     -- There is some lifecycle management that needs to be handled, this is done in application code.
     -- e.g. when a workflow is udpdated, or deleted entirely. As more sources of workflow definition
-    -- are introduced (e.g. web, CLI script), the unique key becomes complex and needs constant
+    -- are introduced ( CLI script), the unique key becomes complex and needs constant
     -- updating. That is why we just return a unique ID, and manage conflicts & updates in application
     -- code.
 );

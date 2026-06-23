@@ -652,7 +652,7 @@ type DataFunction struct {
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
-	IsActive                NullAssetStatus
+	Status                  AssetStatus
 	InputModel              []byte
 	ExecutionTimeoutSeconds pgtype.Int4
 	TtlSeconds              pgtype.Int4
@@ -729,7 +729,7 @@ type Task struct {
 	InputModel       []byte
 	OutputModel      []byte
 	GitCommitHash    string
-	IsActive         NullAssetStatus
+	Status           AssetStatus
 	RegisteredAt     pgtype.Timestamptz
 }
 
@@ -822,7 +822,7 @@ type Workflow struct {
 	TaskConcurrencyLimit pgtype.Int4
 	HaltOnFailure        pgtype.Bool
 	GitCommitHash        string
-	Status               NullAssetStatus
+	Status               AssetStatus
 	RegisteredAt         pgtype.Timestamptz
 }
 
