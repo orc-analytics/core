@@ -20,6 +20,8 @@ const (
 	PgSerializationFailure = "40001"
 	// concurrent writes to the same rows
 	PgDeadlock = "40P01"
+	// Cycle detected - custom error
+	PgCycleDetected = "UE001"
 )
 
 // a helper struct that exposes the database via the predefiend queries

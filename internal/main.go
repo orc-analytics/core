@@ -125,6 +125,11 @@ func NewServer(
 	return s, nil
 }
 
+type transistivePair struct {
+	from string
+	to   string
+}
+
 // --------------------------- Interceptors ---------------------------
 type ctxSession struct {
 	workerId  pgtype.UUID
@@ -191,9 +196,7 @@ func (c *CoreServer) AuthInterceptor(
 	// add claims
 	session := ctxSession{
 		workerId:  workerId,
-		expiresAt: sessionRow.ExpiresAt.Time,
-	}
-
+		expiresAt: sessionRow.ExpiresAt.Time}
 	ctx = context.WithValue(ctx, ctxKey{}, session)
 
 	return handler(ctx, req)
@@ -374,8 +377,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 
 			err = qtx.CreateDataFunction(ctx, db.CreateDataFunctionParams{
 				Name:                    df.GetName(),
-				AstHash:                 df.GetHash(),
-				GitCommitHash:           r.GetGitCommitHash(),
+				GitCommitHash:           df.GetGitCommitHash(),
 				WorkerID:                session.workerId,
 				OutputModel:             df.GetOutputModel(),
 				InputModel:              df.GetOutputModel(),
@@ -435,7 +437,6 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 
 			err = qtx.CreateTask(ctx, db.CreateTaskParams{
 				Name:        task.GetName(),
-				AstHash:     task.GetTaskHash(),
 				WorkerID:    session.workerId,
 				Description: task.GetDescription(),
 				ExecutionTimeout: pgtype.Int4{
@@ -456,7 +457,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				},
 				InputModel:    task.InputModel,
 				OutputModel:   task.OutputModel,
-				GitCommitHash: r.GitCommitHash,
+				GitCommitHash: task.GitCommitHash,
 				Status:        db.AssetStatusPending,
 			})
 			var pgErr *pgconn.PgError
@@ -484,12 +485,12 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 					return status.Error(codes.InvalidArgument, db.ErrBadWorkerId)
 				}
 				err := qtx.RequireDatafunctionForTask(ctx, db.RequireDatafunctionForTaskParams{
-					TaskName:     task.GetName(),
-					TaskAstHash:  task.GetTaskHash(),
-					TaskWorkerID: session.workerId,
-					DfName:       df.GetDfName(),
-					DfAstHash:    df.GetDfAstHash(),
-					DfWorkerID:   dfWorkerId,
+					TaskName:          task.GetName(),
+					TaskGitCommitHash: task.GetGitCommitHash(),
+					TaskWorkerID:      session.workerId,
+					DfName:            df.GetDfName(),
+					DfGitCommitHash:   df.GetDfGitCommitHash(),
+					DfWorkerID:        dfWorkerId,
 				})
 
 				var pgErr *pgconn.PgError
@@ -538,10 +539,10 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 					Valid: true,
 				},
 				HaltOnFailure: pgtype.Bool{
-					Bool:  workflow.GetHaltOnFailure(),
+					Bool:  executionSettings.GetHaltOnFailure(),
 					Valid: true,
 				},
-				GitCommitHash: r.GetGitCommitHash(),
+				GitCommitHash: workflow.GetGitCommitHash(),
 				Status:        db.AssetStatusPending,
 			})
 
@@ -559,10 +560,77 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				return status.Error(codes.Unavailable, db.ErrDatabase(err))
 			}
 
+			// list of all edges, ready to calculate transitive pairs
+			allEdges := make([][2]transitiveEdge, 0)
+
 			// add workflow edges
+			for _, edge := range workflow.GetEdges() {
+				var fromTaskWorkerUUID pgtype.UUID
+				var toTaskWorkerUUID pgtype.UUID
 
-			// add workflow transistive pairs - perform cycle detection here
+				if err := fromTaskWorkerUUID.Scan(edge.GetFromTaskWorkerId()); err != nil {
+					return status.Error(codes.Internal, db.ErrBadWorkerId)
+				}
+				if err := toTaskWorkerUUID.Scan(edge.GetToTaskWorkerId()); err != nil {
+					return status.Error(codes.Internal, db.ErrBadWorkerId)
+				}
+				// add the edge to the transistive pairs
+				fromUnique := fmt.Sprintf("%s_%s_%s", edge.GetFromTaskName(), edge.GetFromTaskGitCommitHash(), edge.GetFromTaskWorkerId())
+				toUnique := fmt.Sprintf("%s_%s_%s", edge.GetToTaskName(), edge.GetToTaskGitCommitHash(), edge.GetToTaskWorkerId())
 
+				allEdges = append(allEdges, [2]transitiveEdge{transitiveEdge{
+					uniqueName: fromUnique,
+					name:       edge.GetFromTaskName(),
+					hash:       edge.GetFromTaskGitCommitHash(),
+					workerId:   fromTaskWorkerUUID,
+				}, transitiveEdge{
+					uniqueName: toUnique,
+					name:       edge.GetToTaskName(),
+					hash:       edge.GetToTaskGitCommitHash(),
+					workerId:   toTaskWorkerUUID,
+				}})
+
+				err := qtx.CreateWorkflowEdge(ctx, db.CreateWorkflowEdgeParams{
+					WorkflowID:            workflowId,
+					FromTaskName:          edge.GetFromTaskName(),
+					ToTaskName:            edge.GetToTaskName(),
+					FromTaskWorkerID:      fromTaskWorkerUUID,
+					ToTaskWorkerID:        toTaskWorkerUUID,
+					FromTaskGitCommitHash: edge.GetFromTaskGitCommitHash(),
+					ToTaskGitCommitHash:   edge.GetToTaskGitCommitHash(),
+				})
+				if err != nil {
+					return status.Error(codes.Unavailable, db.ErrDatabase(err))
+				}
+			}
+			// go through all the edges and pairs a
+			pairs := transitivePairs(allEdges, func(e transitiveEdge) string { return e.uniqueName })
+
+			for _, pair := range pairs {
+				// add workflow transistive pairs - let the DB enforce cycle detection
+				err := qtx.CreateWorkflowTransitivepair(ctx, db.CreateWorkflowTransitivepairParams{
+					WorkflowID:            workflowId,
+					FromTaskName:          pair[0].name,
+					ToTaskName:            pair[1].name,
+					FromTaskGitCommitHash: pair[0].hash,
+					ToTaskGitCommitHash:   pair[1].hash,
+					FromTaskWorkerID:      pair[0].workerId,
+					ToTaskWorkerID:        pair[1].workerId,
+				})
+
+				// check whether the error is a cycle
+				var pgErr *pgconn.PgError
+				if errors.As(err, &pgErr) && pgErr.Code == db.PgCycleDetected {
+					return status.Error(codes.InvalidArgument, fmt.Sprintf("cycle detected between task %v and %v", pair[0].name, pair[1].name))
+				}
+				if errors.As(err, &pgErr) && pgErr.ConstraintName == "workflow_transitive_pair_pKey" {
+					// do nothing - this pair already exists
+					continue
+				}
+				if err != nil {
+					return status.Error(codes.Unavailable, db.ErrDatabase(err))
+				}
+			}
 		}
 		return nil
 	})

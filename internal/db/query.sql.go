@@ -66,7 +66,7 @@ func (q *Queries) ConsumeNonce(ctx context.Context, arg ConsumeNonceParams) (Con
 const createDataFunction = `-- name: CreateDataFunction :exec
 INSERT INTO data_function (
     name,
-    ast_hash,
+    git_commit_hash,
     git_commit_hash,
     worker_id,
     output_model,
@@ -77,18 +77,17 @@ INSERT INTO data_function (
 VALUES (
     $1,
     $2,
+    $2,
     $3,
     $4,
     $5,
     $6,
     $7,
-    $8,
-    $9)
+    $8)
 `
 
 type CreateDataFunctionParams struct {
 	Name                    string
-	AstHash                 string
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
@@ -104,7 +103,6 @@ type CreateDataFunctionParams struct {
 func (q *Queries) CreateDataFunction(ctx context.Context, arg CreateDataFunctionParams) error {
 	_, err := q.db.Exec(ctx, createDataFunction,
 		arg.Name,
-		arg.AstHash,
 		arg.GitCommitHash,
 		arg.WorkerID,
 		arg.OutputModel,
@@ -190,7 +188,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (C
 const createTask = `-- name: CreateTask :exec
 INSERT INTO task (
     name,
-    ast_hash,
+    git_commit_hash,
     worker_id,
     description,
     execution_timeout,
@@ -212,13 +210,13 @@ VALUES (
     $8,
     $9,
     $10,
-    $11,
-    $12)
+    $2,
+    $11)
 `
 
 type CreateTaskParams struct {
 	Name             string
-	AstHash          string
+	GitCommitHash    string
 	WorkerID         pgtype.UUID
 	Description      string
 	ExecutionTimeout pgtype.Int4
@@ -227,7 +225,6 @@ type CreateTaskParams struct {
 	BackoffStrategy  NullBackoffStrategy
 	InputModel       []byte
 	OutputModel      []byte
-	GitCommitHash    string
 	Status           AssetStatus
 }
 
@@ -237,7 +234,7 @@ type CreateTaskParams struct {
 func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
 	_, err := q.db.Exec(ctx, createTask,
 		arg.Name,
-		arg.AstHash,
+		arg.GitCommitHash,
 		arg.WorkerID,
 		arg.Description,
 		arg.ExecutionTimeout,
@@ -246,7 +243,6 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) error {
 		arg.BackoffStrategy,
 		arg.InputModel,
 		arg.OutputModel,
-		arg.GitCommitHash,
 		arg.Status,
 	)
 	return err
@@ -314,13 +310,13 @@ func (q *Queries) CreateWorkflow(ctx context.Context, arg CreateWorkflowParams) 
 }
 
 const createWorkflowEdge = `-- name: CreateWorkflowEdge :exec
-INSERT INTO workflow_edges (
+INSERT INTO workflow_edge (
     workflow_id,
     from_task_name,
-    from_task_ast_hash,
+    from_task_git_commit_hash,
     from_task_worker_id,
     to_task_name,
-    to_task_ast_hash,
+    to_task_git_commit_hash,
     to_task_worker_id)
 VALUES (
     $1,
@@ -330,39 +326,41 @@ VALUES (
     $5,
     $6,
     $7)
+ON CONFLICT
+    DO NOTHING
 `
 
 type CreateWorkflowEdgeParams struct {
-	WorkflowID       int32
-	FromTaskName     string
-	FromTaskAstHash  string
-	FromTaskWorkerID pgtype.UUID
-	ToTaskName       string
-	ToTaskAstHash    string
-	ToTaskWorkerID   pgtype.UUID
+	WorkflowID            int32
+	FromTaskName          string
+	FromTaskGitCommitHash string
+	FromTaskWorkerID      pgtype.UUID
+	ToTaskName            string
+	ToTaskGitCommitHash   string
+	ToTaskWorkerID        pgtype.UUID
 }
 
 func (q *Queries) CreateWorkflowEdge(ctx context.Context, arg CreateWorkflowEdgeParams) error {
 	_, err := q.db.Exec(ctx, createWorkflowEdge,
 		arg.WorkflowID,
 		arg.FromTaskName,
-		arg.FromTaskAstHash,
+		arg.FromTaskGitCommitHash,
 		arg.FromTaskWorkerID,
 		arg.ToTaskName,
-		arg.ToTaskAstHash,
+		arg.ToTaskGitCommitHash,
 		arg.ToTaskWorkerID,
 	)
 	return err
 }
 
-const createWorkflowTransistivepair = `-- name: CreateWorkflowTransistivepair :exec
-INSERT INTO workflow_transistive_pairs (
+const createWorkflowTransitivepair = `-- name: CreateWorkflowTransitivepair :exec
+INSERT INTO workflow_transitive_pair (
     workflow_id,
     from_task_name,
-    from_task_ast_hash,
+    from_task_git_commit_hash,
     from_task_worker_id,
     to_task_name,
-    to_task_ast_hash,
+    to_task_git_commit_hash,
     to_task_worker_id)
 VALUES (
     $1,
@@ -372,26 +370,28 @@ VALUES (
     $5,
     $6,
     $7)
+ON CONFLICT
+    DO NOTHING
 `
 
-type CreateWorkflowTransistivepairParams struct {
-	WorkflowID       int32
-	FromTaskName     string
-	FromTaskAstHash  string
-	FromTaskWorkerID pgtype.UUID
-	ToTaskName       string
-	ToTaskAstHash    string
-	ToTaskWorkerID   pgtype.UUID
+type CreateWorkflowTransitivepairParams struct {
+	WorkflowID            int32
+	FromTaskName          string
+	FromTaskGitCommitHash string
+	FromTaskWorkerID      pgtype.UUID
+	ToTaskName            string
+	ToTaskGitCommitHash   string
+	ToTaskWorkerID        pgtype.UUID
 }
 
-func (q *Queries) CreateWorkflowTransistivepair(ctx context.Context, arg CreateWorkflowTransistivepairParams) error {
-	_, err := q.db.Exec(ctx, createWorkflowTransistivepair,
+func (q *Queries) CreateWorkflowTransitivepair(ctx context.Context, arg CreateWorkflowTransitivepairParams) error {
+	_, err := q.db.Exec(ctx, createWorkflowTransitivepair,
 		arg.WorkflowID,
 		arg.FromTaskName,
-		arg.FromTaskAstHash,
+		arg.FromTaskGitCommitHash,
 		arg.FromTaskWorkerID,
 		arg.ToTaskName,
-		arg.ToTaskAstHash,
+		arg.ToTaskGitCommitHash,
 		arg.ToTaskWorkerID,
 	)
 	return err
@@ -498,10 +498,10 @@ func (q *Queries) RegisterWorker(ctx context.Context, arg RegisterWorkerParams) 
 const requireDatafunctionForTask = `-- name: RequireDatafunctionForTask :exec
 INSERT INTO task_required_data_function (
     task_name,
-    task_ast_hash,
+    task_git_commit_hash,
     task_worker_id,
     df_name,
-    df_ast_hash,
+    df_git_commit_hash,
     df_worker_id)
 VALUES (
     $1,
@@ -513,21 +513,21 @@ VALUES (
 `
 
 type RequireDatafunctionForTaskParams struct {
-	TaskName     string
-	TaskAstHash  string
-	TaskWorkerID pgtype.UUID
-	DfName       string
-	DfAstHash    string
-	DfWorkerID   pgtype.UUID
+	TaskName          string
+	TaskGitCommitHash string
+	TaskWorkerID      pgtype.UUID
+	DfName            string
+	DfGitCommitHash   string
+	DfWorkerID        pgtype.UUID
 }
 
 func (q *Queries) RequireDatafunctionForTask(ctx context.Context, arg RequireDatafunctionForTaskParams) error {
 	_, err := q.db.Exec(ctx, requireDatafunctionForTask,
 		arg.TaskName,
-		arg.TaskAstHash,
+		arg.TaskGitCommitHash,
 		arg.TaskWorkerID,
 		arg.DfName,
-		arg.DfAstHash,
+		arg.DfGitCommitHash,
 		arg.DfWorkerID,
 	)
 	return err

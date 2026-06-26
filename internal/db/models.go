@@ -648,7 +648,6 @@ type AnnotationWindowType struct {
 
 type DataFunction struct {
 	Name                    string
-	AstHash                 string
 	GitCommitHash           string
 	WorkerID                pgtype.UUID
 	OutputModel             []byte
@@ -719,7 +718,6 @@ type Result struct {
 
 type Task struct {
 	Name             string
-	AstHash          string
 	WorkerID         pgtype.UUID
 	Description      string
 	ExecutionTimeout pgtype.Int4
@@ -737,7 +735,7 @@ type TaskExecution struct {
 	ID                       int32
 	WorkflowRunID            int32
 	TaskName                 string
-	TaskAstHash              string
+	TaskGitCommitHash        string
 	TaskWorkerID             pgtype.UUID
 	RequestedAt              pgtype.Timestamptz
 	Result                   []byte
@@ -752,12 +750,12 @@ type TaskExecution struct {
 }
 
 type TaskRequiredDataFunction struct {
-	TaskName     string
-	TaskAstHash  string
-	TaskWorkerID pgtype.UUID
-	DfName       string
-	DfAstHash    string
-	DfWorkerID   pgtype.UUID
+	TaskName          string
+	TaskGitCommitHash string
+	TaskWorkerID      pgtype.UUID
+	DfName            string
+	DfGitCommitHash   string
+	DfWorkerID        pgtype.UUID
 }
 
 type Window struct {
@@ -827,13 +825,13 @@ type Workflow struct {
 }
 
 type WorkflowEdge struct {
-	WorkflowID       int32
-	FromTaskName     string
-	FromTaskAstHash  string
-	FromTaskWorkerID pgtype.UUID
-	ToTaskName       string
-	ToTaskAstHash    string
-	ToTaskWorkerID   pgtype.UUID
+	WorkflowID            int32
+	FromTaskName          string
+	FromTaskGitCommitHash string
+	FromTaskWorkerID      pgtype.UUID
+	ToTaskName            string
+	ToTaskGitCommitHash   string
+	ToTaskWorkerID        pgtype.UUID
 }
 
 type WorkflowRun struct {
@@ -845,12 +843,12 @@ type WorkflowRun struct {
 	ExecutionParameters []byte
 }
 
-type WorkflowTransistivePair struct {
-	WorkflowID       int32
-	FromTaskName     string
-	FromTaskAstHash  string
-	FromTaskWorkerID pgtype.UUID
-	ToTaskName       string
-	ToTaskAstHash    string
-	ToTaskWorkerID   pgtype.UUID
+type WorkflowTransitivePair struct {
+	WorkflowID            int32
+	FromTaskName          string
+	FromTaskGitCommitHash string
+	FromTaskWorkerID      pgtype.UUID
+	ToTaskName            string
+	ToTaskGitCommitHash   string
+	ToTaskWorkerID        pgtype.UUID
 }

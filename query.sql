@@ -122,7 +122,7 @@ WHERE expires_at < now();
 -- name: CreateDataFunction :exec
 INSERT INTO data_function (
     name,
-    ast_hash,
+    git_commit_hash,
     git_commit_hash,
     worker_id,
     output_model,
@@ -132,7 +132,7 @@ INSERT INTO data_function (
     ttl_seconds)
 VALUES (
     @name,
-    @ast_hash,
+    @git_commit_hash,
     @git_commit_hash,
     @worker_id,
     @output_model,
@@ -147,7 +147,7 @@ VALUES (
 -- name: CreateTask :exec
 INSERT INTO task (
     name,
-    ast_hash,
+    git_commit_hash,
     worker_id,
     description,
     execution_timeout,
@@ -160,7 +160,7 @@ INSERT INTO task (
     status)
 VALUES (
     @name,
-    @ast_hash,
+    @git_commit_hash,
     @worker_id,
     @description,
     @execution_timeout,
@@ -175,17 +175,17 @@ VALUES (
 -- name: RequireDatafunctionForTask :exec
 INSERT INTO task_required_data_function (
     task_name,
-    task_ast_hash,
+    task_git_commit_hash,
     task_worker_id,
     df_name,
-    df_ast_hash,
+    df_git_commit_hash,
     df_worker_id)
 VALUES (
     @task_name,
-    @task_ast_hash,
+    @task_git_commit_hash,
     @task_worker_id,
     @df_name,
-    @df_ast_hash,
+    @df_git_commit_hash,
     @df_worker_id);
 
 -- ============================================================
@@ -218,38 +218,42 @@ RETURNING
     id;
 
 -- name: CreateWorkflowEdge :exec
-INSERT INTO workflow_edges (
+INSERT INTO workflow_edge (
     workflow_id,
     from_task_name,
-    from_task_ast_hash,
+    from_task_git_commit_hash,
     from_task_worker_id,
     to_task_name,
-    to_task_ast_hash,
+    to_task_git_commit_hash,
     to_task_worker_id)
 VALUES (
     @workflow_id,
     @from_task_name,
-    @from_task_ast_hash,
+    @from_task_git_commit_hash,
     @from_task_worker_id,
     @to_task_name,
-    @to_task_ast_hash,
-    @to_task_worker_id);
+    @to_task_git_commit_hash,
+    @to_task_worker_id)
+ON CONFLICT
+    DO NOTHING;
 
--- name: CreateWorkflowTransistivepair :exec
-INSERT INTO workflow_transistive_pairs (
+-- name: CreateWorkflowTransitivepair :exec
+INSERT INTO workflow_transitive_pair (
     workflow_id,
     from_task_name,
-    from_task_ast_hash,
+    from_task_git_commit_hash,
     from_task_worker_id,
     to_task_name,
-    to_task_ast_hash,
+    to_task_git_commit_hash,
     to_task_worker_id)
 VALUES (
     @workflow_id,
     @from_task_name,
-    @from_task_ast_hash,
+    @from_task_git_commit_hash,
     @from_task_worker_id,
     @to_task_name,
-    @to_task_ast_hash,
-    @to_task_worker_id);
+    @to_task_git_commit_hash,
+    @to_task_worker_id)
+ON CONFLICT
+    DO NOTHING;
 

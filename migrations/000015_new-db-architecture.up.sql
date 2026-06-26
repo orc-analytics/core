@@ -107,8 +107,7 @@ CREATE TYPE asset_status AS ENUM (
 
 CREATE TABLE data_function (
     name text NOT NULL, -- name of the data function
-    ast_hash text NOT NULL, -- the has of the AST segment
-    git_commit_hash text NOT NULL, -- git commit hash of the current commit
+    git_commit_hash text NOT NULL,
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
     output_model jsonb NOT NULL,
     status asset_status NOT NULL DEFAULT inactive,
@@ -116,7 +115,7 @@ CREATE TABLE data_function (
     execution_timeout_seconds integer,
     ttl_seconds integer,
     registered_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (name, ast_hash, worker_id)
+    PRIMARY KEY (name, git_commit_hash, worker_id)
     -- ensures that a DF can be attached to different workers
     -- at different moments in time.
 );
@@ -124,7 +123,6 @@ CREATE TABLE data_function (
 -- Tasks
 CREATE TABLE task (
     name text NOT NULL,
-    ast_hash text NOT NULL, -- hash of the AST for the segment that defines the task
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
     description text NOT NULL,
     execution_timeout integer, -- seconds
@@ -137,21 +135,21 @@ CREATE TABLE task (
     status asset_status NOT NULL DEFAULT inactive,
     -- that this version is currently being served
     registered_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (name, ast_hash, worker_id) -- ensures that a task can be attached to different workers
+    PRIMARY KEY (name, git_commit_hash, worker_id) -- ensures that a task can be attached to different workers
     -- at different moments in time.
 );
 
 -- what tasks require what data functions
 CREATE TABLE task_required_data_function (
     task_name text NOT NULL,
-    task_ast_hash text NOT NULL,
+    task_git_commit_hash text NOT NULL,
     task_worker_id uuid NOT NULL,
     df_name text NOT NULL,
-    df_ast_hash text NOT NULL,
+    df_git_commit_hash text NOT NULL,
     df_worker_id uuid NOT NULL,
-    FOREIGN KEY (task_name, task_ast_hash, task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
-    FOREIGN KEY (df_name, df_ast_hash, df_worker_id) REFERENCES data_function (name, ast_hash, worker_id) ON DELETE CASCADE,
-    PRIMARY KEY (task_name, task_ast_hash, task_worker_id, df_name, df_ast_hash, df_worker_id)
+    FOREIGN KEY (task_name, task_git_commit_hash, task_worker_id) REFERENCES task (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    FOREIGN KEY (df_name, df_git_commit_hash, df_worker_id) REFERENCES data_function (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    PRIMARY KEY (task_name, task_git_commit_hash, task_worker_id, df_name, df_git_commit_hash, df_worker_id)
 );
 
 -- workflow definitions
@@ -178,23 +176,23 @@ CREATE TABLE workflow (
 );
 
 -- defines the edges to workflows
-CREATE TABLE workflow_edges (
+CREATE TABLE workflow_edge (
     workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
-    from_task_ast_hash text NOT NULL,
+    from_task_git_commit_hash text NOT NULL,
     from_task_worker_id uuid NOT NULL,
     to_task_name text NOT NULL,
-    to_task_ast_hash text NOT NULL,
+    to_task_git_commit_hash text NOT NULL,
     to_task_worker_id uuid NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES workflow (id),
-    FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
-    FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
-    PRIMARY KEY (workflow_id, from_task_name, from_task_ast_hash, from_task_worker_id, to_task_name, to_task_ast_hash, to_task_worker_id)
+    FOREIGN KEY (from_task_name, from_task_git_commit_hash, from_task_worker_id) REFERENCES task (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    FOREIGN KEY (to_task_name, to_task_git_commit_hash, to_task_worker_id) REFERENCES task (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    PRIMARY KEY (workflow_id, from_task_name, from_task_git_commit_hash, from_task_worker_id, to_task_name, to_task_git_commit_hash, to_task_worker_id)
 );
 
--- transistive pairs. contains edges between each task that will eventually reach
+-- transitive pairs. contains edges between each task that will eventually reach
 -- another task.
--- enables O(1) lookup of cycle detection. e.g. the transistive pairs of:
+-- enables O(1) lookup of cycle detection. e.g. the transitive pairs of:
 -- A -> B -> C -> D would be:
 -- - A -> B
 -- - A -> C
@@ -205,19 +203,51 @@ CREATE TABLE workflow_edges (
 -- Then if a new edge is introduced that would complete a cycle (e.g. D->A), then you check for the inverse:
 -- A->D - this exists, so the new pair would introduce a cycle.
 -- search indices
-CREATE TABLE workflow_transistive_pairs (
+CREATE TABLE workflow_transitive_pair (
     workflow_id integer NOT NULL,
     from_task_name text NOT NULL,
-    from_task_ast_hash text NOT NULL,
+    from_task_git_commit_hash text NOT NULL,
     from_task_worker_id uuid NOT NULL,
     to_task_name text NOT NULL,
-    to_task_ast_hash text NOT NULL,
+    to_task_git_commit_hash text NOT NULL,
     to_task_worker_id uuid NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES workflow (id),
-    FOREIGN KEY (from_task_name, from_task_ast_hash, from_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
-    FOREIGN KEY (to_task_name, to_task_ast_hash, to_task_worker_id) REFERENCES task (name, ast_hash, worker_id) ON DELETE CASCADE,
-    PRIMARY KEY (workflow_id, from_task_name, from_task_ast_hash, from_task_worker_id, to_task_name, to_task_ast_hash, to_task_worker_id)
+    FOREIGN KEY (from_task_name, from_task_git_commit_hash, from_task_worker_id) REFERENCES task (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    FOREIGN KEY (to_task_name, to_task_git_commit_hash, to_task_worker_id) REFERENCES task (name, git_commit_hash, worker_id) ON DELETE CASCADE,
+    PRIMARY KEY (workflow_id, from_task_name, from_task_git_commit_hash, from_task_worker_id, to_task_name, to_task_git_commit_hash, to_task_worker_id)
 );
+
+-- checks on each row insert to transitive pairs if the reverse is true.
+-- if so, reject the insert.
+CREATE OR REPLACE FUNCTION check_transitive_pair_cycle ()
+    RETURNS TRIGGER
+    AS $$
+BEGIN
+    IF EXISTS (
+        SELECT
+            1
+        FROM
+            workflow_transitive_pair
+        WHERE
+            workflow_id = NEW.workflow_id
+            AND from_task_name = NEW.to_task_name
+            AND from_task_git_commit_hash = NEW.to_task_git_commit_hash
+            AND from_task_worker_id = NEW.to_task_worker_id
+            AND to_task_name = NEW.from_task_name
+            AND to_task_git_commit_hash = NEW.from_task_git_commit_hash
+            AND to_task_worker_id = NEW.from_task_worker_id) THEN
+    RAISE EXCEPTION 'Insert would create a cycle in workflow %', NEW.workflow_id
+        USING ERRCODE = 'UE001';
+END IF;
+    RETURN NEW;
+END;
+$$
+LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER trg_check_transitive_pair_cycle
+    AFTER INSERT ON workflow_transitive_pair DEFERRABLE INITIALLY IMMEDIATE
+    FOR EACH ROW
+    EXECUTE FUNCTION check_transitive_pair_cycle ();
 
 CREATE UNIQUE INDEX one_active_owner_per_data_function ON data_function (name)
 WHERE
@@ -262,9 +292,9 @@ CREATE INDEX workflow_git_commit_idx ON workflow (git_commit_hash);
 
 CREATE INDEX workflow_registered_at_idx ON workflow (registered_at);
 
-CREATE INDEX workflow_edges_id_idx ON workflow_edges (id);
+CREATE INDEX workflow_edges_id_idx ON workflow_edge (id);
 
-CREATE INDEX workflow_transistive_pairs_id_idx ON workflow_transistive_pairs (id);
+CREATE INDEX workflow_transitive_pairs_id_idx ON workflow_transitive_pair (id);
 
 -- ============================================================================
 -- RUNTIME
@@ -298,7 +328,7 @@ CREATE TABLE task_execution (
     id serial PRIMARY KEY,
     workflow_run_id integer NOT NULL REFERENCES workflow_run (id),
     task_name text NOT NULL,
-    task_ast_hash text NOT NULL,
+    task_git_commit_hash text NOT NULL,
     task_worker_id uuid NOT NULL,
     requested_at timestamptz NOT NULL DEFAULT NOW(),
     result jsonb,
@@ -310,7 +340,7 @@ CREATE TABLE task_execution (
     cpu_seconds integer,
     memory_gib_seconds integer,
     execution_duration_seconds integer,
-    FOREIGN KEY (task_name, task_ast_hash, task_worker_id) REFERENCES task (name, ast_hash, worker_id)
+    FOREIGN KEY (task_name, task_git_commit_hash, task_worker_id) REFERENCES task (name, git_commit_hash, worker_id)
 );
 
 CREATE INDEX workflow_run_idx ON workflow_run (id);
