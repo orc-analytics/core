@@ -76,6 +76,7 @@ CREATE TABLE worker (
     public_key bytea NOT NULL CHECK (length(public_key) = 32),
     connection_url text NOT NULL,
     is_serving boolean NOT NULL DEFAULT FALSE,
+    git_commit_hash string,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_worker_public_key UNIQUE (public_key)
 );

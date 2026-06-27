@@ -789,6 +789,7 @@ type Worker struct {
 	PublicKey     []byte
 	ConnectionUrl string
 	IsServing     bool
+	GitCommitHash pgtype.Text
 	CreatedAt     pgtype.Timestamptz
 }
 

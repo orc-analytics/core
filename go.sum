@@ -132,6 +132,8 @@ github.com/orca-telemetry/contract/go/v2 v2.0.0-38bfdfb h1:lhvJ5Nqj/L1NeqqMeRnPO
 github.com/orca-telemetry/contract/go/v2 v2.0.0-38bfdfb/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-49cf3ef h1:o/PS9Tyfu4BCNgj6meqCMnK+67ecnbfveXlK1U0QayU=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-49cf3ef/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-49d69c1 h1:Jup/HBtXI40kLwe8FZgd3ZIMsEQ3qCGUKvmSsaD7934=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-49d69c1/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-66ffd0d h1:k0aSadQFmZng8ASNZpw1HTfNCH3g79sUKO6GOxiWvZA=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-66ffd0d/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-6f35d0d h1:PXjeNPhgFX/orxJ1T1yo9RnpaLfie4mM8hrcopMFibM=

@@ -456,9 +456,17 @@ WHERE
     id = $1
 `
 
-func (q *Queries) GetWorkerByID(ctx context.Context, id pgtype.UUID) (Worker, error) {
+type GetWorkerByIDRow struct {
+	ID            pgtype.UUID
+	PublicKey     []byte
+	ConnectionUrl string
+	IsServing     bool
+	CreatedAt     pgtype.Timestamptz
+}
+
+func (q *Queries) GetWorkerByID(ctx context.Context, id pgtype.UUID) (GetWorkerByIDRow, error) {
 	row := q.db.QueryRow(ctx, getWorkerByID, id)
-	var i Worker
+	var i GetWorkerByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.PublicKey,
@@ -547,6 +555,48 @@ func (q *Queries) RevokeSession(ctx context.Context, accessKey []byte) error {
 	return err
 }
 
+const setDataFunctionsToActive = `-- name: SetDataFunctionsToActive :exec
+UPDATE
+    data_function
+SET
+    status = 'active'
+WHERE
+    git_commit_hash = $1
+    AND worker_id = $2
+    AND status = 'pending'
+`
+
+type SetDataFunctionsToActiveParams struct {
+	CommitHash string
+	WorkerID   pgtype.UUID
+}
+
+func (q *Queries) SetDataFunctionsToActive(ctx context.Context, arg SetDataFunctionsToActiveParams) error {
+	_, err := q.db.Exec(ctx, setDataFunctionsToActive, arg.CommitHash, arg.WorkerID)
+	return err
+}
+
+const setTasksToActive = `-- name: SetTasksToActive :exec
+UPDATE
+    task
+SET
+    status = 'active'
+WHERE
+    git_commit_hash = $1
+    AND worker_id = $2
+    AND status = 'pending'
+`
+
+type SetTasksToActiveParams struct {
+	CommitHash string
+	WorkerID   pgtype.UUID
+}
+
+func (q *Queries) SetTasksToActive(ctx context.Context, arg SetTasksToActiveParams) error {
+	_, err := q.db.Exec(ctx, setTasksToActive, arg.CommitHash, arg.WorkerID)
+	return err
+}
+
 const setWorkerServing = `-- name: SetWorkerServing :exec
 UPDATE
     worker
@@ -563,5 +613,51 @@ type SetWorkerServingParams struct {
 
 func (q *Queries) SetWorkerServing(ctx context.Context, arg SetWorkerServingParams) error {
 	_, err := q.db.Exec(ctx, setWorkerServing, arg.IsServing, arg.ID)
+	return err
+}
+
+const setWorkerToServing = `-- name: SetWorkerToServing :exec
+UPDATE
+    worker
+SET
+    is_serving = TRUE
+WHERE
+    git_commit_hash = $1
+    AND id = $2
+    AND is_serving = FALSE
+`
+
+type SetWorkerToServingParams struct {
+	CommitHash pgtype.Text
+	WorkerID   pgtype.UUID
+}
+
+// ============================================================
+// Life cycle management
+// ============================================================
+func (q *Queries) SetWorkerToServing(ctx context.Context, arg SetWorkerToServingParams) error {
+	_, err := q.db.Exec(ctx, setWorkerToServing, arg.CommitHash, arg.WorkerID)
+	return err
+}
+
+const setWorkflowToActive = `-- name: SetWorkflowToActive :exec
+UPDATE
+    workflow
+SET
+    status = 'active'
+WHERE
+    status = 'pending'
+    AND workflow_source = 'worker'
+    AND worker_id = $1
+    AND git_commit_hash = $2
+`
+
+type SetWorkflowToActiveParams struct {
+	WorkerID   pgtype.UUID
+	CommitHash string
+}
+
+func (q *Queries) SetWorkflowToActive(ctx context.Context, arg SetWorkflowToActiveParams) error {
+	_, err := q.db.Exec(ctx, setWorkflowToActive, arg.WorkerID, arg.CommitHash)
 	return err
 }

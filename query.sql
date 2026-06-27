@@ -257,3 +257,47 @@ VALUES (
 ON CONFLICT
     DO NOTHING;
 
+-- ============================================================
+-- Life cycle management
+-- ============================================================
+-- name: SetWorkerToServing :exec
+UPDATE
+    worker
+SET
+    is_serving = TRUE
+WHERE
+    git_commit_hash = @commit_hash
+    AND id = @worker_id
+    AND is_serving = FALSE;
+
+-- name: SetDataFunctionsToActive :exec
+UPDATE
+    data_function
+SET
+    status = 'active'
+WHERE
+    git_commit_hash = @commit_hash
+    AND worker_id = @worker_id
+    AND status = 'pending';
+
+-- name: SetTasksToActive :exec
+UPDATE
+    task
+SET
+    status = 'active'
+WHERE
+    git_commit_hash = @commit_hash
+    AND worker_id = @worker_id
+    AND status = 'pending';
+
+-- name: SetWorkflowToActive :exec
+UPDATE
+    workflow
+SET
+    status = 'active'
+WHERE
+    status = 'pending'
+    AND workflow_source = 'worker'
+    AND worker_id = @worker_id
+    AND git_commit_hash = @commit_hash;
+

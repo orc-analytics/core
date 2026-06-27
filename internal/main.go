@@ -637,5 +637,53 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 	if err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return &pb.RegisterWorkerSnapshotResponse{}, nil
+}
+
+func (c *CoreServer) RegisterServing(ctx context.Context, r *pb.RegisterServingRequest) (*pb.RegisterServingResponse, error) {
+	// modify all data functions, tasks and workflows that are in pending state for this commit hash and worker
+	// to active.
+	//
+	// deactivate other versions
+	session, ok := SessionFromCtx(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "no active session")
+	}
+	err := c.txWithRetry(ctx, func(qtx *db.Queries) error {
+		err := qtx.SetWorkerServing(ctx, db.SetWorkerServingParams{
+			IsServing: true,
+			ID:        session.workerId,
+		})
+		if err != nil {
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+
+		err = qtx.SetDataFunctionsToActive(ctx, db.SetDataFunctionsToActiveParams{
+			CommitHash: r.GetCommitHash(),
+			WorkerID:   session.workerId,
+		})
+		if err != nil {
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+		err = qtx.SetTasksToActive(ctx, db.SetTasksToActiveParams{
+			CommitHash: r.GetCommitHash(),
+			WorkerID:   session.workerId,
+		})
+		if err != nil {
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+		err = qtx.SetWorkflowToActive(ctx, db.SetWorkflowToActiveParams{
+			CommitHash: r.GetCommitHash(),
+			WorkerID:   session.workerId,
+		})
+		if err != nil {
+			return status.Error(codes.Unavailable, db.ErrDatabase(err))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.RegisterServingResponse{}, nil
 }
