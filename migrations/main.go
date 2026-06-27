@@ -14,7 +14,7 @@ import (
 var PostgresqlMigrations embed.FS
 
 func MigrateDatalayer(connStr string) error {
-	d, err := iofs.New(PostgresqlMigrations, "migrations")
+	d, err := iofs.New(PostgresqlMigrations, ".")
 	if err != nil {
 		return fmt.Errorf("failed to load embedded migrations: %w", err)
 	}

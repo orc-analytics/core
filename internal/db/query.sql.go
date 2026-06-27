@@ -151,12 +151,10 @@ func (q *Queries) CreateNonce(ctx context.Context, arg CreateNonceParams) (Creat
 const createSession = `-- name: CreateSession :one
 INSERT INTO worker_session (
     worker_id,
-    access_key,
-    expires_at)
+    access_key)
 VALUES (
     $1,
-    $2,
-    $3)
+    $2)
 RETURNING
     id,
     access_key,
@@ -166,7 +164,6 @@ RETURNING
 type CreateSessionParams struct {
 	WorkerID  pgtype.UUID
 	AccessKey []byte
-	ExpiresAt pgtype.Timestamptz
 }
 
 type CreateSessionRow struct {
@@ -179,7 +176,7 @@ type CreateSessionRow struct {
 // Session
 // ============================================================
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (CreateSessionRow, error) {
-	row := q.db.QueryRow(ctx, createSession, arg.WorkerID, arg.AccessKey, arg.ExpiresAt)
+	row := q.db.QueryRow(ctx, createSession, arg.WorkerID, arg.AccessKey)
 	var i CreateSessionRow
 	err := row.Scan(&i.ID, &i.AccessKey, &i.ExpiresAt)
 	return i, err

@@ -81,12 +81,10 @@ WHERE expires_at < now();
 -- name: CreateSession :one
 INSERT INTO worker_session (
     worker_id,
-    access_key,
-    expires_at)
+    access_key)
 VALUES (
     @worker_id,
-    @access_key,
-    @expires_at)
+    @access_key)
 RETURNING
     id,
     access_key,

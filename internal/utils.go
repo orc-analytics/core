@@ -9,6 +9,7 @@ type transitiveEdge struct {
 	workerId   pgtype.UUID
 }
 
+// for a complete set of edges within a DAG, compute the transitive pairs
 func transitivePairs[T any](edges [][2]T, key func(T) string) [][2]T {
 	adj := map[string][]string{}
 	nodes := map[string]struct{}{}

@@ -275,7 +275,7 @@ func (c *CoreServer) GetNonce(ctx context.Context, n *pb.GetNonceRequest) (*pb.G
 		return nil, err
 	}
 
-	return &pb.GetNonceResponse{Challenge: nonceRow.Nonce}, nil
+	return &pb.GetNonceResponse{Challenge: nonceRow.Nonce, NonceId: nonceRow.ID.String()}, nil
 }
 
 // checks the user signed nonce and issues a access token
@@ -361,7 +361,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			if err != nil {
 				return status.Error(
 					codes.InvalidArgument,
-					db.ErrBadArgument(fmt.Sprintf("input model to data function %w not a valid json-schema", df.GetName())),
+					db.ErrBadArgument(fmt.Sprintf("input model to data function %s not a valid json-schema", df.GetName())),
 				)
 			}
 			var outputModel *jsonschema.Schema
@@ -369,7 +369,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			if err != nil {
 				return status.Error(
 					codes.InvalidArgument,
-					db.ErrBadArgument(fmt.Sprintf("output model to data function %w not a valid json-schema", df.GetName())),
+					db.ErrBadArgument(fmt.Sprintf("output model to data function %s not a valid json-schema", df.GetName())),
 				)
 			}
 
@@ -386,7 +386,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				TtlSeconds:              pgtype.Int4{Int32: dfSettings.GetTimeout(), Valid: true},
 			})
 			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) || pgErr.Code == db.PgUniqueViolation {
+			if errors.As(err, &pgErr) && pgErr.Code == db.PgUniqueViolation {
 				switch pgErr.ConstraintName {
 				case "data_function_pKey":
 					// if there is a primary key violation - do nothing. this exact data
@@ -395,7 +395,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				case "one_active_owner_per_data_function":
 					// raise an error - we are trying to add a data function with the same name
 					// as another active function
-					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a data function with name (%w) already exists and is either pending or active", df.GetName())))
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a data function with name (%s) already exists and is either pending or active", df.GetName())))
 				}
 			}
 			if err != nil {
@@ -410,7 +410,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			if err != nil {
 				return status.Error(
 					codes.InvalidArgument,
-					db.ErrBadArgument(fmt.Sprintf("input model to task %w not a valid json-schema", task.GetName())),
+					db.ErrBadArgument(fmt.Sprintf("input model to task %s not a valid json-schema", task.GetName())),
 				)
 			}
 			var outputModel *jsonschema.Schema
@@ -418,7 +418,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			if err != nil {
 				return status.Error(
 					codes.InvalidArgument,
-					db.ErrBadArgument(fmt.Sprintf("output model to task %w not a valid json-schema", task.GetName())),
+					db.ErrBadArgument(fmt.Sprintf("output model to task %s not a valid json-schema", task.GetName())),
 				)
 			}
 
@@ -461,7 +461,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				Status:        db.AssetStatusPending,
 			})
 			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) || pgErr.Code == db.PgUniqueViolation {
+			if errors.As(err, &pgErr) && pgErr.Code == db.PgUniqueViolation {
 				switch pgErr.ConstraintName {
 				case "task_pKey":
 					// if there is a primary key violation - do nothing. this exact task
@@ -470,7 +470,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				case "one_active_owner_per_task":
 					// raise an error - we are trying to add a task with the same name
 					// as another in an active or pending state
-					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a task with name (%w) already exists and is either pending or active", task.GetName())))
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a task with name (%s) already exists and is either pending or active", task.GetName())))
 				}
 			}
 			if err != nil {
@@ -508,7 +508,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 			if err != nil {
 				return status.Error(
 					codes.InvalidArgument,
-					db.ErrBadArgument(fmt.Sprintf("input model to workflow %w not a valid json-schema", workflow.GetWorkflowName())),
+					db.ErrBadArgument(fmt.Sprintf("input model to workflow %s not a valid json-schema", workflow.GetWorkflowName())),
 				)
 			}
 
@@ -553,7 +553,7 @@ func (c *CoreServer) RegisterWorkerSnapshot(ctx context.Context, r *pb.RegisterW
 				// this workflow already exists - do nothing
 				case "one_active_owner_per_workflow":
 					// this workflow name is taken
-					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a workflow with name (%w) already exists and is either pending or active", workflow.GetWorkflowName())))
+					return status.Error(codes.AlreadyExists, db.ErrAlreadyExists(fmt.Sprintf("a workflow with name (%s) already exists and is either pending or active", workflow.GetWorkflowName())))
 				}
 			}
 			if err != nil {

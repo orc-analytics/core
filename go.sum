@@ -126,6 +126,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-083413d h1:PupXuGIL6KD4ggEs0x6A/DXlOsbZUsgrhgy2A72d2UM=
+github.com/orca-telemetry/contract/go/v2 v2.0.0-083413d/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-1b05c46 h1:Lc1paKwjW4CaF6KtGbkL7+1mIzB17sR9OpqPGK2psbA=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-1b05c46/go.mod h1:9mD+FTPjBtKhtFdrz7NcPIaCM2uxipeJmlI667NExbk=
 github.com/orca-telemetry/contract/go/v2 v2.0.0-38bfdfb h1:lhvJ5Nqj/L1NeqqMeRnPOevIDCZVYcBJvBVtbjeMhcY=

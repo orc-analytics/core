@@ -671,7 +671,7 @@ type DatafunctionExecution struct {
 type DatafunctionStorageBackend struct {
 	ID          int32
 	BaseUri     string
-	StorageType interface{}
+	StorageType DatafunctionStorageType
 }
 
 type Metadata struct {
@@ -741,7 +741,7 @@ type TaskExecution struct {
 	Result                   []byte
 	Failed                   pgtype.Bool
 	CompletedAt              pgtype.Timestamptz
-	ResultRecievedAt         pgtype.Timestamptz
+	ResultReceivedAt         pgtype.Timestamptz
 	FailureSource            NullFailureSource
 	FailureCategory          NullFailureCategory
 	CpuSeconds               pgtype.Int4

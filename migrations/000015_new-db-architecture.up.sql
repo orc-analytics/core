@@ -76,7 +76,7 @@ CREATE TABLE worker (
     public_key bytea NOT NULL CHECK (length(public_key) = 32),
     connection_url text NOT NULL,
     is_serving boolean NOT NULL DEFAULT FALSE,
-    git_commit_hash string,
+    git_commit_hash text,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT uq_worker_public_key UNIQUE (public_key)
 );
@@ -95,7 +95,7 @@ CREATE TABLE worker_session (
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE,
     access_key bytea NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
-    expires_at timestamptz NOT NULL,
+    expires_at timestamptz NOT NULL DEFAULT now() + interval '30 minutes',
     revoked boolean NOT NULL DEFAULT FALSE,
     CONSTRAINT uq_access_key UNIQUE (access_key)
 );
@@ -111,7 +111,7 @@ CREATE TABLE data_function (
     git_commit_hash text NOT NULL,
     worker_id uuid NOT NULL REFERENCES worker (id) ON DELETE CASCADE, -- id of the worker that owns it
     output_model jsonb NOT NULL,
-    status asset_status NOT NULL DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT 'inactive',
     input_model jsonb,
     execution_timeout_seconds integer,
     ttl_seconds integer,
@@ -133,7 +133,7 @@ CREATE TABLE task (
     input_model jsonb,
     output_model jsonb,
     git_commit_hash text NOT NULL, -- current git commit
-    status asset_status NOT NULL DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT 'inactive',
     -- that this version is currently being served
     registered_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (name, git_commit_hash, worker_id) -- ensures that a task can be attached to different workers
@@ -165,7 +165,7 @@ CREATE TABLE workflow (
     task_concurrency_limit integer,
     halt_on_failure boolean,
     git_commit_hash text NOT NULL, -- current git commit
-    status asset_status NOT NULL DEFAULT inactive,
+    status asset_status NOT NULL DEFAULT 'inactive',
     registered_at timestamptz NOT NULL DEFAULT now()
     -- workflows are globally unique, and are uniquely defined by their name when in pending
     -- or active state.
@@ -293,10 +293,6 @@ CREATE INDEX workflow_git_commit_idx ON workflow (git_commit_hash);
 
 CREATE INDEX workflow_registered_at_idx ON workflow (registered_at);
 
-CREATE INDEX workflow_edges_id_idx ON workflow_edge (id);
-
-CREATE INDEX workflow_transitive_pairs_id_idx ON workflow_transitive_pair (id);
-
 -- ============================================================================
 -- RUNTIME
 -- ============================================================================
@@ -312,14 +308,14 @@ CREATE TABLE workflow_run (
 CREATE TABLE datafunction_storage_backend (
     id serial PRIMARY KEY,
     base_uri text NOT NULL DEFAULT '',
-    storage_type datafunction_storage_backends NOT NULL DEFAULT 'DATAFUNCTION_STORAGE_FILESYSTEM'
+    storage_type datafunction_storage_type NOT NULL DEFAULT 'DATAFUNCTION_STORAGE_FILESYSTEM'
 );
 
 CREATE TABLE datafunction_execution (
     id serial PRIMARY KEY,
     workflow_run_id integer NOT NULL REFERENCES workflow_run (id),
     uri text NOT NULL,
-    status execution_status NOT NULL DEFAULT EXECUTION_STATUS_UNSPECIFIED,
+    status execution_status NOT NULL DEFAULT 'EXECUTION_STATUS_UNSPECIFIED',
     completed boolean NOT NULL DEFAULT FALSE,
     requested_at timestamptz NOT NULL DEFAULT NOW(),
     finished_at timestamptz
@@ -335,7 +331,7 @@ CREATE TABLE task_execution (
     result jsonb,
     failed boolean,
     completed_at timestamptz,
-    result_recieved_at timestamptz,
+    result_received_at timestamptz,
     failure_source failure_source,
     failure_category failure_category,
     cpu_seconds integer,
